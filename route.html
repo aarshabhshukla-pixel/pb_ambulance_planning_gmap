@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Route Deployment · Ambulance Planner</title>
+<meta name="theme-color" content="#0b1730">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="leaflet.css">
+<style>
+@font-face{font-family:'Exo 2';font-style:normal;font-display:swap;font-weight:100 900;src:url(exo2-latin-ext.woff2) format('woff2-variations'),url(exo2-latin-ext.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'Exo 2';font-style:normal;font-display:swap;font-weight:100 900;src:url(exo2-latin.woff2) format('woff2-variations'),url(exo2-latin.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
+:root{
+  --font:'Exo 2',system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --bg:#eef1f6; --bg2:#f4f6fa; --surface:#fff; --surface2:#f7f8fb; --ink:#0b1220; --muted:#5d6a80; --faint:#8b97aa; --line:#e2e7ef; --line2:#d3dae5;
+  --brand:#e11d48; --brand2:#be123c; --brandsoft:rgba(225,29,72,.10); --navy:#0b1730; --navy2:#15294a;
+  --ok:#15803d; --okbg:#dcfce7; --bad:#dc2626; --badbg:#fee2e2; --warn:#b45309; --warnbg:#fef3c7; --info:#1d4ed8; --infobg:#dbeafe;
+  --shadow:0 1px 2px rgba(11,18,32,.05),0 4px 14px rgba(11,18,32,.06); --shadow2:0 10px 30px rgba(11,18,32,.18); --r:12px;
+}
+:root[data-theme="dark"]{
+  --bg:#070b13; --bg2:#0b111c; --surface:#111a2a; --surface2:#162135; --ink:#e8edf6; --muted:#9aa7bd; --faint:#6f7d95; --line:#1f2c44; --line2:#2a3a57;
+  --brandsoft:rgba(244,63,94,.16); --navy:#050912; --navy2:#0d1729;
+  --ok:#4ade80; --okbg:rgba(34,197,94,.14); --bad:#fb7185; --badbg:rgba(244,63,94,.16); --warn:#fbbf24; --warnbg:rgba(251,191,36,.14); --info:#93c5fd; --infobg:rgba(59,130,246,.16);
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--font);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+a{color:var(--info)}
+.app{display:grid;grid-template-rows:auto auto 1fr;height:100vh;height:100dvh}
+/* top bar */
+.topbar{display:flex;align-items:center;gap:12px;padding:9px 14px;background:linear-gradient(100deg,var(--navy),var(--navy2));color:#fff;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.logo{width:36px;height:36px;border-radius:10px;background:var(--brand);display:grid;place-items:center;flex:none}
+.brand b{font-size:17px;font-weight:700;white-space:nowrap}
+.brand small{display:block;font-size:11.5px;color:rgba(255,255,255,.65);white-space:nowrap}
+.modsw{display:flex;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:3px;margin-left:8px}
+.modsw a{color:rgba(255,255,255,.75);text-decoration:none;padding:6px 12px;border-radius:7px;font-weight:600;font-size:13px;white-space:nowrap}
+.modsw a.on{background:#fff;color:var(--navy)}
+.tb-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:650;background:var(--surface2);color:var(--muted);border:1px solid var(--line);white-space:nowrap}
+.chip.ok{background:var(--okbg);color:var(--ok);border-color:transparent}.chip.bad{background:var(--badbg);color:var(--bad);border-color:transparent}
+.chip.warn{background:var(--warnbg);color:var(--warn);border-color:transparent}.chip.info{background:var(--infobg);color:var(--info);border-color:transparent}
+.topbar .chip{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.18)}
+.tbtn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);color:#fff;cursor:pointer}
+.tbtn:hover{background:rgba(255,255,255,.14)}
+/* tabs */
+.tabs{display:flex;gap:2px;padding:0 10px;background:var(--surface);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.tabs button{display:flex;align-items:center;gap:7px;padding:11px 14px;border:0;background:none;color:var(--muted);font-weight:650;cursor:pointer;border-bottom:2.5px solid transparent;white-space:nowrap}
+.tabs button.on{color:var(--brand);border-bottom-color:var(--brand)}
+.tabs button .cnt{background:var(--brand);color:#fff;border-radius:999px;font-size:11px;padding:0 6px;min-width:18px}
+main{min-height:0;position:relative;display:flex;flex-direction:column;overflow:hidden}
+.pane{display:none;flex:1 1 auto;min-height:0}
+.pane.on{display:block}
+.split{display:grid;grid-template-columns:460px 1fr;height:100%;min-height:0}
+.side{overflow-y:auto;background:var(--bg2);border-right:1px solid var(--line);padding:14px;min-height:0}
+.full{overflow-y:auto;height:100%;padding:16px 18px 40px}
+.mapbox{position:relative;min-height:0}
+.map{position:absolute;inset:0}
+/* cards and controls */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 10px;font-size:15px;display:flex;align-items:center;gap:8px}
+.card h3 .aside{margin-left:auto;font-weight:500;font-size:12px;color:var(--muted)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 10px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 10px}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);font-weight:600;min-width:0}
+input[type=text],input[type=number],input[type=time],input[type=date],input[type=email],input[type=password],input[type=tel],select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line2);border-radius:8px;background:var(--surface);color:var(--ink);min-width:0}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--brandsoft);border-color:var(--brand)}
+textarea{resize:vertical;min-height:70px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--surface);color:var(--ink);cursor:pointer;font-weight:600;white-space:nowrap}
+.btn:hover{border-color:var(--faint)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.primary:hover{background:var(--brand2)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.dirty{box-shadow:0 0 0 3px var(--brandsoft)}
+.ico{border:0;background:none;padding:4px;border-radius:6px;cursor:pointer;color:var(--muted);display:inline-flex}
+.ico:hover{background:var(--surface2);color:var(--ink)}
+.note{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+.hint{font-size:12px;color:var(--faint)}
+.muted{color:var(--muted)}
+.err{color:var(--bad);font-weight:600}
+.warn{color:var(--warn);font-weight:600}
+.good{color:var(--ok);font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:6px 11px;cursor:pointer;font-weight:600;color:var(--muted)}
+.seg button.on{background:var(--navy);color:#fff}
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.stat{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
+.stat .l{font-size:11.5px;color:var(--muted);font-weight:600}
+.stat .v{font-size:18px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat .s{font-size:11.5px;color:var(--faint)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:12px}
+.kpis .stat{background:var(--surface);box-shadow:var(--shadow)}
+.kpis .stat .v{font-size:22px}
+/* route stop list */
+.stops{display:flex;flex-direction:column;gap:0}
+.stop{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 9px 8px 6px;display:grid;grid-template-columns:22px 28px 1fr auto;gap:6px;align-items:start}
+.stop.drag{opacity:.4}
+.stop.over{border-color:var(--brand);box-shadow:0 0 0 2px var(--brandsoft)}
+.stop .grip{cursor:grab;color:var(--faint);padding-top:6px;display:flex;flex-direction:column;align-items:center;gap:0}
+.stop .grip button{border:0;background:none;color:var(--faint);cursor:pointer;padding:0;line-height:1;font-size:11px}
+.stop .num{width:26px;height:26px;border-radius:50%;background:var(--navy);color:#fff;font-weight:700;display:grid;place-items:center;font-size:12.5px;margin-top:3px}
+.stop .num.first{background:var(--brand)}
+.stop .body{min-width:0;display:flex;flex-direction:column;gap:5px}
+.stop .name{font-weight:650;border:1px solid transparent;background:transparent;padding:3px 6px;border-radius:6px}
+.stop .name:hover,.stop .name:focus{border-color:var(--line2);background:var(--surface)}
+.stop .times{display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);padding-left:6px}
+.stop .times b{color:var(--ink)}
+.stop .mini{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.stop .mini label{font-size:11px;color:var(--faint);font-weight:600;display:flex;flex-direction:column;gap:2px}
+.stop .mini input{padding:4px 6px;font-size:12.5px}
+.stop details{font-size:12.5px}
+.stop details summary{cursor:pointer;color:var(--muted);font-size:12px;padding-left:6px}
+.stop details .grid2{margin-top:6px}
+.stop .ovr{color:var(--warn);font-weight:700}
+.leg{margin:0 0 0 30px;padding:5px 10px;border-left:2px dashed var(--line2);font-size:12px;color:var(--muted);min-height:22px}
+.leg.err{color:var(--bad);border-left-color:var(--bad)}
+.leg b{color:var(--ink)}
+.empty{padding:22px;text-align:center;color:var(--muted);border:1.5px dashed var(--line2);border-radius:12px}
+/* tables */
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table.t{width:100%;border-collapse:collapse;font-size:13px}
+table.t th{text-align:left;font-size:11.5px;color:var(--muted);font-weight:700;padding:8px 9px;border-bottom:1px solid var(--line);background:var(--surface2);white-space:nowrap;position:sticky;top:0}
+table.t td{padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+table.t tr:last-child td{border-bottom:0}
+table.t tr.click{cursor:pointer}
+table.t tr.click:hover td{background:var(--surface2)}
+table.t td.n{text-align:right;white-space:nowrap}
+table.t input,table.t select{padding:4px 6px;font-size:12.5px}
+.st{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.st-Planned{background:var(--surface2);color:var(--muted);border:1px solid var(--line2)}
+.st-Assigned{background:var(--infobg);color:var(--info)}
+.st-In.progress,.st-Inprogress{background:var(--warnbg);color:var(--warn)}
+.st-Completed{background:var(--okbg);color:var(--ok)}
+.st-Cancelled{background:var(--badbg);color:var(--bad);text-decoration:line-through}
+/* roster */
+.wkbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.wkbar h2{margin:0 8px 0 0;font-size:18px}
+.roster{border-collapse:separate;border-spacing:0;width:100%;min-width:900px;font-size:12.5px}
+.roster th{background:var(--surface2);padding:8px;border-bottom:1px solid var(--line);text-align:left;font-size:12px;position:sticky;top:0;z-index:1}
+.roster th.today{color:var(--brand)}
+.roster td{border-bottom:1px solid var(--line);border-left:1px solid var(--line);padding:5px;vertical-align:top;min-width:120px;height:62px}
+.roster td.amb{border-left:0;min-width:150px;background:var(--surface)}
+.roster td.amb b{display:block}
+.roster td.cell{cursor:pointer;background:var(--surface)}
+.roster td.cell:hover{background:var(--surface2)}
+.roster td.cell .add{color:var(--faint);font-size:12px;display:none}
+.roster td.cell:hover .add{display:block}
+.dchip{display:block;border-radius:7px;padding:4px 6px;margin-bottom:4px;background:var(--infobg);border-left:3px solid var(--info);cursor:pointer;line-height:1.3}
+.dchip.Planned{background:var(--surface2);border-left-color:var(--faint)}
+.dchip.In.progress,.dchip.Inprogress{background:var(--warnbg);border-left-color:var(--warn)}
+.dchip.Completed{background:var(--okbg);border-left-color:var(--ok)}
+.dchip.Cancelled{opacity:.55;text-decoration:line-through}
+.dchip.conf{outline:2px solid var(--bad)}
+.dchip small{display:block;color:var(--muted)}
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(5,9,18,.55);display:none;align-items:flex-start;justify-content:center;z-index:3000;padding:4vh 12px;overflow-y:auto}
+.modal.show{display:flex}
+.mbox{background:var(--surface);border-radius:14px;box-shadow:var(--shadow2);width:min(760px,100%);padding:18px 18px 16px;position:relative}
+.mbox.wide{width:min(1200px,100%)}
+.mbox h2{margin:0 0 12px;font-size:18px;padding-right:30px}
+.mbox .x{position:absolute;right:10px;top:10px}
+.mfoot{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.mfoot .l{margin-right:auto}
+.conflicts{margin-top:10px;padding:9px 11px;border-radius:9px;background:var(--badbg);color:var(--bad);font-size:12.5px;font-weight:600}
+.conflicts.ok{background:var(--okbg);color:var(--ok)}
+.qrwrap{display:grid;grid-template-columns:240px 1fr;gap:16px;align-items:start}
+.qrwrap canvas{width:240px;height:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+/* map extras */
+.msearch{position:absolute;z-index:900;top:12px;left:56px;right:12px;max-width:440px}
+.msearch input{width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--line2);box-shadow:var(--shadow);background:var(--surface)}
+.res{margin-top:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow2);display:none;max-height:300px;overflow-y:auto}
+.res.show{display:block}
+.res button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line)}
+.res button:hover{background:var(--surface2)}
+.res small{display:block;color:var(--muted);font-size:11.5px}
+.res .msg{padding:9px 12px;color:var(--muted);font-size:12.5px}
+.mtools{position:absolute;z-index:900;top:60px;left:56px;display:flex;gap:6px;flex-wrap:wrap}
+.mtools button{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:9px;border:1px solid var(--line2);background:var(--surface);box-shadow:var(--shadow);cursor:pointer;font-weight:650;font-size:12.5px}
+.mtools button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.mstatus{position:absolute;z-index:900;bottom:22px;left:12px;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:6px 10px;font-size:12.5px;box-shadow:var(--shadow);max-width:60%}
+.mstatus:empty{display:none}
+.pinnum{width:28px;height:28px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--navy);border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);display:grid;place-items:center}
+.pinnum span{transform:rotate(45deg);color:#fff;font-weight:700;font-size:12px}
+.pinnum.first{background:var(--brand)}
+.pinnum.done{background:var(--ok)}.pinnum.at{background:var(--warn)}
+.ambmk{background:var(--brand);color:#fff;border:2px solid #fff;border-radius:8px;padding:2px 7px;font-weight:700;font-size:11.5px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.35);transform:translate(-50%,-50%);display:inline-block}
+.ambmk.stale{background:#64748b}
+.mk{background:none;border:0}
+.leaflet-container{font-family:var(--font);background:var(--bg)}
+:root[data-theme="dark"] .leaflet-tile-pane{filter:brightness(.72) contrast(1.1) saturate(.85)}
+/* live list */
+.lv{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px;margin-bottom:8px;cursor:pointer}
+.lv.sel{border-color:var(--brand);box-shadow:0 0 0 2px var(--brandsoft)}
+.lv .bar{height:6px;border-radius:4px;background:var(--surface2);overflow:hidden;margin:6px 0}
+.lv .bar i{display:block;height:100%;background:var(--ok)}
+/* login + toast */
+.login{position:fixed;inset:0;z-index:4000;background:linear-gradient(140deg,var(--navy),var(--navy2));display:none;place-items:center;padding:16px}
+.login.show{display:grid}
+.login .mbox{width:min(400px,100%)}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:var(--navy);color:#fff;padding:10px 16px;border-radius:10px;box-shadow:var(--shadow2);opacity:0;transition:.25s;z-index:5000;max-width:min(560px,92vw);font-weight:600;font-size:13px;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.bad{background:var(--bad)}
+.busy{position:fixed;inset:0;background:rgba(5,9,18,.25);z-index:4500;display:none;place-items:center}
+.busy.show{display:grid}
+.busy div{background:var(--surface);padding:14px 20px;border-radius:12px;box-shadow:var(--shadow2);font-weight:650}
+.banner{background:var(--warnbg);color:var(--warn);padding:7px 14px;font-size:12.5px;font-weight:600;display:none}
+.banner.show{display:block}
+.prev{max-height:340px;overflow:auto}
+.pill{display:inline-block;padding:1px 7px;border-radius:6px;background:var(--surface2);border:1px solid var(--line);font-size:11.5px;margin:1px}
+.print-only{display:none}
+@media (max-width:980px){
+  .split{grid-template-columns:1fr;grid-template-rows:55vh auto;height:auto}
+  .split .mapbox{order:-1}
+  .pane.on.splitpane{overflow-y:auto}
+  .side{border-right:0;overflow:visible}
+  .mapbox{height:55vh}
+  .brand small{display:none}
+  .modsw{margin-left:0;order:3;width:100%}
+  .modsw a{flex:1;text-align:center}
+  .qrwrap{grid-template-columns:1fr}
+  .grid4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media print{
+  body *{visibility:hidden}
+  .print-only,.print-only *{visibility:visible}
+  .print-only{display:block;position:absolute;left:0;top:0;width:100%;color:#000;background:#fff;font-size:11px}
+  .print-only table{width:100%;border-collapse:collapse}
+  .print-only th,.print-only td{border:1px solid #999;padding:4px 5px;text-align:left}
+  .print-only h1{font-size:18px;margin:0 0 4px}.print-only h2{font-size:14px;margin:14px 0 6px}
+  .print-only .pb{page-break-after:always}
+  @page{size:A4;margin:12mm}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-over" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></symbol>
+    <symbol id="i-amb" viewBox="0 0 24 24"><path d="M2.5 16.5V7.5a1 1 0 0 1 1-1h10v10M13.5 9.5h4l3.5 3.5v3.5h-7.5"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/><path d="M8 9v4M6 11h4"/></symbol>
+    <symbol id="i-hosp" viewBox="0 0 24 24"><path d="M4 21V6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v15M2.5 21h19M10 21v-4h4v4M12 8v5M9.5 10.5h5"/></symbol>
+    <symbol id="i-dem" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-10.5a6.5 6.5 0 0 1 13 0C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.3"/></symbol>
+    <symbol id="i-time" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></symbol>
+    <symbol id="i-plan" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></symbol>
+    <symbol id="i-set" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M5 9l7-6 7 6M12 3v18M3 12h18M9 18l3 3 3-3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-zone" viewBox="0 0 24 24"><path d="M4 7l6-3 8 3 2 9-7 4-9-4z"/><path d="M8 12c2-1.3 3-1.3 4 0s3 1.3 4 0" /></symbol>
+    <symbol id="i-loc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.2v.3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16 10"/></symbol>
+    <symbol id="i-wa" viewBox="0 0 24 24"><path d="M4 20l1.3-4A8 8 0 1 1 8.4 19z"/><path d="M9 9.5c.3 2 2.5 4.5 5 5l1.2-1.2-1.8-1-.8.6c-.9-.4-1.8-1.3-2.2-2.2l.6-.8-1-1.8z"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="i-pdf" viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>
+    <symbol id="i-csv" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M12 21V9M7 14l5-5 5 5M4 4h16"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-5"/></symbol>
+    <symbol id="i-rupee" viewBox="0 0 24 24"><path d="M6 4h12M6 9h12M9 4c6 0 6 10 0 10H6l8 7"/></symbol>
+    <symbol id="i-road" viewBox="0 0 24 24"><path d="M5 21L9 3M19 21L15 3M12 5v2M12 11v2M12 17v2"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7.5 14h3M13.5 14h3M7.5 17.5h3"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6-5.4-6-10.2a6 6 0 0 1 12 0C18 15.6 12 21 12 21z"/><circle cx="12" cy="10.8" r="2.2"/></symbol>
+    <symbol id="i-cross" viewBox="0 0 24 24"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" fill="#fff" stroke="none"/></symbol>
+  </defs>
+</svg>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><div class="logo"><svg class="i" style="width:20px;height:20px"><use href="#i-cross"/></svg></div><div><b>Ambulance Planner</b><small id="orgName">Route deployment</small></div></div>
+    <nav class="modsw" aria-label="Module"><a href="index.html">Radius coverage</a><a class="on" href="route.html">Route deployment</a></nav>
+    <div class="tb-r">
+      <span class="chip" id="modeChip">…</span>
+      <button class="tbtn" id="exportBtn" title="Export Excel / CSV / PDF"><svg class="i"><use href="#i-save"/></svg><span>Export</span></button>
+      <button class="tbtn" id="themeBtn" title="Light / dark"><svg class="i"><use href="#i-moon"/></svg></button>
+    </div>
+  </header>
+  <nav class="tabs" id="tabs">
+    <button data-tab="routes" class="on"><svg class="i"><use href="#i-road"/></svg>Routes</button>
+    <button data-tab="roster"><svg class="i"><use href="#i-cal"/></svg>Roster</button>
+    <button data-tab="live"><svg class="i"><use href="#i-loc"/></svg>Live <span class="cnt" id="liveCnt" style="display:none"></span></button>
+    <button data-tab="dash"><svg class="i"><use href="#i-over"/></svg>Dashboard</button>
+    <button data-tab="masters"><svg class="i"><use href="#i-amb"/></svg>Ambulances &amp; staff</button>
+    <button data-tab="settings"><svg class="i"><use href="#i-set"/></svg>Settings</button>
+  </nav>
+  <main>
+    <div class="banner" id="demoBanner">Demo mode: data is saved in this browser only and QR links work only on this device. Add your Supabase details in config.js to go live (see the setup guide).</div>
+
+    <!-- ================= ROUTES ================= -->
+    <section class="pane on splitpane" data-pane="routes">
+      <div class="split">
+        <div class="side">
+          <div class="card">
+            <h3><svg class="i"><use href="#i-road"/></svg>Route<span class="aside" id="routeSaved"></span></h3>
+            <div class="row" style="margin-bottom:8px">
+              <select id="routeSel" style="flex:1 1 180px"></select>
+              <button class="btn sm" id="routeNew"><svg class="i"><use href="#i-plus"/></svg>New</button>
+              <button class="btn sm" id="routeDup">Duplicate</button>
+              <button class="btn sm danger" id="routeDel">Delete</button>
+            </div>
+            <div id="routeForm">
+              <div class="grid2">
+                <label class="f" style="grid-column:1/-1">Route name<input type="text" id="rName" maxlength="80" placeholder="e.g. Sohna Road morning loop"></label>
+                <label class="f">Start time<input type="time" id="rStart" value="08:00"></label>
+                <label class="f">Planned avg speed (km/h)<input type="number" id="rSpeed" min="5" max="120" step="1" value="30"></label>
+                <label class="f">Default halt (min)<input type="number" id="rHalt" min="0" max="720" step="5" value="30"></label>
+                <label class="f">Coverage radius (km)<input type="number" id="rRadius" min="0.2" max="30" step="0.1" value="2"></label>
+                <label class="f">Road routing<select id="rEngine"></select></label>
+                <label class="f">Travel time from<select id="rTimeSrc"><option value="speed">Planned speed</option><option value="engine">Routing engine estimate</option></select></label>
+              </div>
+              <p class="note" id="engineNote"></p>
+              <div class="row" style="margin-top:10px">
+                <button class="btn primary" id="routeSave"><svg class="i"><use href="#i-save"/></svg>Save route</button>
+                <button class="btn" id="schedBtn"><svg class="i"><use href="#i-csv"/></svg>Full schedule table</button>
+                <button class="btn" id="fromBase" title="Insert an ambulance base as the first stop">Start at a base…</button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <h3><svg class="i"><use href="#i-over"/></svg>Summary<span class="aside" id="sumAside"></span></h3>
+            <div class="stats" id="sumStats"></div>
+            <p class="note" id="popNote"></p>
+          </div>
+          <div class="card">
+            <h3><svg class="i"><use href="#i-pin"/></svg>Stops<span class="aside">drag ⋮ to reorder</span></h3>
+            <p class="note" style="margin:0 0 10px">Search a place on the map, or press <b>Add stops</b> and click the map. Times recalculate as you change speed, halt, order or start time.</p>
+            <div class="stops" id="stops"></div>
+          </div>
+        </div>
+        <div class="mapbox">
+          <div class="map" id="rmap"></div>
+          <div class="msearch"><input type="text" id="q" placeholder="Search a place, landmark or paste lat, lng / Google Maps link" autocomplete="off"><div class="res" id="results"></div></div>
+          <div class="mtools">
+            <button id="addMode"><svg class="i"><use href="#i-plus"/></svg>Add stops</button>
+            <button id="fitBtn"><svg class="i"><use href="#i-fit"/></svg>Fit</button>
+            <button id="circBtn" class="on"><svg class="i"><use href="#i-plan"/></svg>Coverage</button>
+          </div>
+          <div class="mstatus" id="rStatus"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ROSTER ================= -->
+    <section class="pane" data-pane="roster">
+      <div class="full">
+        <div class="wkbar">
+          <h2 id="wkTitle">Roster</h2>
+          <div class="seg" id="rosterView"><button data-v="week" class="on">Week</button><button data-v="day">Day</button></div>
+          <button class="btn sm" id="wkPrev">‹</button><input type="date" id="wkDate" style="width:auto"><button class="btn sm" id="wkNext">›</button><button class="btn sm" id="wkToday">Today</button>
+          <span style="flex:1"></span>
+          <button class="btn sm" id="copyPrevDay">Copy previous day → this day</button>
+          <button class="btn sm" id="copyPrevWeek">Copy last week → this week</button>
+          <button class="btn sm" id="autoFill">Auto-fill week</button>
+          <button class="btn sm primary" id="newDep"><svg class="i"><use href="#i-plus"/></svg>New deployment</button>
+        </div>
+        <div id="confBar"></div>
+        <div class="tw" id="rosterBox"></div>
+        <p class="note">Click an empty cell to deploy that ambulance on that day. Its default pilot and EMT (set in <b>Ambulances &amp; staff</b>) and the route it used last are filled in for you. Red outline = clash: the same ambulance or person in two deployments at overlapping times.</p>
+      </div>
+    </section>
+
+    <!-- ================= LIVE ================= -->
+    <section class="pane splitpane" data-pane="live">
+      <div class="split">
+        <div class="side">
+          <div class="card">
+            <h3><svg class="i"><use href="#i-loc"/></svg>Live deployments<span class="aside" id="liveAside"></span></h3>
+            <div class="row"><input type="date" id="liveDate" style="width:auto"><button class="btn sm" id="liveRefresh">Refresh</button><label class="hint"><input type="checkbox" id="liveAuto" checked> auto every 30 s</label></div>
+          </div>
+          <div id="liveList"></div>
+          <div class="card" id="liveDetail" style="display:none"></div>
+        </div>
+        <div class="mapbox"><div class="map" id="lmap"></div><div class="mstatus" id="lStatus"></div></div>
+      </div>
+    </section>
+
+    <!-- ================= DASHBOARD ================= -->
+    <section class="pane" data-pane="dash">
+      <div class="full">
+        <div class="card">
+          <h3><svg class="i"><use href="#i-over"/></svg>Filters</h3>
+          <div class="grid4" id="dFilters">
+            <label class="f">From<input type="date" id="dFrom"></label>
+            <label class="f">To<input type="date" id="dTo"></label>
+            <label class="f">Ambulance<select id="dAmb"></select></label>
+            <label class="f">Type<select id="dType"><option value="">All</option><option>BLS</option><option>ALS</option><option>PTV</option><option>FRV</option></select></label>
+            <label class="f">Pilot<select id="dPilot"></select></label>
+            <label class="f">Route<select id="dRoute"></select></label>
+            <label class="f">Status<select id="dStatus"><option value="">All</option><option>Planned</option><option>Assigned</option><option>In progress</option><option>Completed</option><option>Cancelled</option></select></label>
+            <label class="f">Late if more than (min)<input type="number" id="dLate" value="10" min="1" max="120"></label>
+          </div>
+        </div>
+        <div class="kpis" id="dKpis"></div>
+        <div class="card"><h3>Deployments<span class="aside" id="dAside"></span></h3><div class="tw" id="dTable"></div></div>
+      </div>
+    </section>
+
+    <!-- ================= MASTERS ================= -->
+    <section class="pane" data-pane="masters">
+      <div class="full">
+        <div class="card">
+          <h3><svg class="i"><use href="#i-save"/></svg>Bulk add or update (fastest way)</h3>
+          <p class="note" style="margin-top:0">Copy rows from Excel (including the header row) and paste below, or upload a CSV / Excel file. Existing records are matched by <b>registration number</b> (ambulances) or <b>employee code</b>, else phone, else name (staff), so nothing is duplicated. Default pilot and EMT can be given by name, phone or employee code.</p>
+          <div class="row" style="margin-bottom:8px">
+            <div class="seg" id="bulkKind"><button data-v="staff" class="on">Staff (pilots &amp; EMTs)</button><button data-v="ambulances">Ambulances</button></div>
+            <button class="btn sm" id="tplBtn">Download Excel template</button>
+            <label class="btn sm" style="cursor:pointer">Upload CSV / Excel<input type="file" id="bulkFile" accept=".csv,.xlsx,.xls,.txt" hidden></label>
+          </div>
+          <textarea id="bulkText" rows="6" placeholder="Paste here, e.g.&#10;Name	Role	Phone	Emp code&#10;Ravi Kumar	Pilot	9876543210	P101"></textarea>
+          <div class="row" style="margin-top:8px"><button class="btn" id="bulkCheck">Check</button><button class="btn primary" id="bulkGo" disabled>Import</button><span class="hint" id="bulkInfo"></span></div>
+          <div class="prev" id="bulkPrev"></div>
+        </div>
+        <div class="card">
+          <h3><svg class="i"><use href="#i-amb"/></svg>Ambulances<span class="aside" id="ambAside"></span></h3>
+          <div class="row" style="margin-bottom:8px"><button class="btn sm" id="ambAdd"><svg class="i"><use href="#i-plus"/></svg>Add one</button><input type="text" id="ambFind" placeholder="Filter" style="max-width:200px"></div>
+          <div class="tw" id="ambTable"></div>
+          <p class="note">Default crew is used automatically when you deploy this ambulance. Changing a dropdown saves at once. These ambulances also appear in the Radius coverage module (Fleet → Sync with ambulance master).</p>
+        </div>
+        <div class="card">
+          <h3><svg class="i"><use href="#i-hand"/></svg>Staff<span class="aside" id="staffAside"></span></h3>
+          <div class="row" style="margin-bottom:8px"><button class="btn sm" id="staffAdd"><svg class="i"><use href="#i-plus"/></svg>Add one</button><input type="text" id="staffFind" placeholder="Filter" style="max-width:200px"></div>
+          <div class="tw" id="staffTable"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SETTINGS ================= -->
+    <section class="pane" data-pane="settings">
+      <div class="full">
+        <div class="card"><h3><svg class="i"><use href="#i-check"/></svg>Connections</h3><div id="connOut"></div><div class="row" style="margin-top:10px"><button class="btn" id="connTest">Test connections</button><button class="btn" id="signOut">Sign out</button></div></div>
+        <div class="card" id="adminCard">
+          <h3><svg class="i"><use href="#i-hand"/></svg>Admins<span class="aside">who can sign in to this page</span></h3>
+          <p class="note" style="margin-top:0">Only these emails can see or change data, even if someone else creates a login. Each person also needs a user in Supabase → Authentication → Users.</p>
+          <div id="adminList"></div>
+          <div class="row" style="margin-top:8px"><input type="email" id="adminNew" placeholder="name@pbhealth.com" style="max-width:280px"><button class="btn" id="adminAdd">Add admin</button></div>
+        </div>
+        <div class="card">
+          <h3><svg class="i"><use href="#i-dem"/></svg>Population grid (optional)</h3>
+          <p class="note" style="margin-top:0">Load a CSV of population points (columns <b>lat</b>, <b>lng</b>, <b>pop</b>; e.g. ward or census-village centres, or a WorldPop grid exported to CSV). Then every stop can take its population from the grid within its radius, and the route summary shows <b>unique</b> population with overlaps counted once. Without a grid, enter population by hand.</p>
+          <div class="row"><label class="btn" style="cursor:pointer">Upload population CSV<input type="file" id="popFile" accept=".csv,.txt" hidden></label><button class="btn danger" id="popClear">Remove grid</button><span class="hint" id="popInfo"></span></div>
+        </div>
+        <div class="card">
+          <h3><svg class="i"><use href="#i-link"/></svg>Routing keys in this browser (optional)</h3>
+          <p class="note" style="margin-top:0">Normally keys go in <b>config.js</b> so everyone gets them. Use these boxes only to try a key in this browser.</p>
+          <div class="grid2"><label class="f">openrouteservice key<input type="password" id="orsKey" autocomplete="off"></label><label class="f">Ola Maps key<input type="password" id="olaKey" autocomplete="off"></label></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="modal"><div class="mbox" id="mbox"><button class="ico x" data-close>✕</button><div id="mbody"></div></div></div>
+<div class="login" id="login"><div class="mbox"><h2>Sign in</h2><p class="note" style="margin-top:0">Ambulance Planner · Route deployment</p>
+  <form id="loginForm"><div style="display:grid;gap:10px;margin-top:12px"><label class="f">Email<input type="email" id="lEmail" autocomplete="username" required></label><label class="f">Password<input type="password" id="lPass" autocomplete="current-password" required></label><button class="btn primary" type="submit">Sign in</button><div class="err" id="lErr"></div></div></form>
+  <p class="note">Users are created by the admin in Supabase → Authentication → Users.</p><p class="note"><a href="index.html">Open the Radius coverage module instead</a></p></div></div>
+<div class="busy" id="busy"><div id="busyMsg">Working…</div></div>
+<div class="toast" id="toast"></div>
+<div class="print-only" id="printArea"></div>
+
+<script src="config.js"></script>
+<script src="leaflet.js"></script>
+<script src="supabase.js"></script>
+<script src="xlsx.js"></script>
+<script src="qrcode.js"></script>
+<script src="common.js"></script>
+<script src="db.js"></script>
+<script src="route.js"></script>
+<script>
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>

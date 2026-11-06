@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>My route · Ambulance</title>
+<meta name="theme-color" content="#0b1730">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+@font-face{font-family:'Exo 2';font-style:normal;font-display:swap;font-weight:100 900;src:url(exo2-latin-ext.woff2) format('woff2-variations'),url(exo2-latin-ext.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'Exo 2';font-style:normal;font-display:swap;font-weight:100 900;src:url(exo2-latin.woff2) format('woff2-variations'),url(exo2-latin.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
+:root{--font:'Exo 2',system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;--bg:#eef1f6;--surface:#fff;--surface2:#f4f6fa;--ink:#0b1220;--muted:#5d6a80;--line:#e2e7ef;--brand:#e11d48;--navy:#0b1730;--ok:#15803d;--okbg:#dcfce7;--bad:#dc2626;--badbg:#fee2e2;--warn:#b45309;--warnbg:#fef3c7;--info:#1d4ed8;--infobg:#dbeafe}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--font);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button{font:inherit}
+.top{background:linear-gradient(100deg,#0b1730,#15294a);color:#fff;padding:14px 16px 16px;padding-top:max(14px,env(safe-area-inset-top))}
+.top .org{font-size:12.5px;opacity:.7}
+.top h1{margin:2px 0 2px;font-size:24px;letter-spacing:.3px}
+.top .sub{font-size:14px;opacity:.85}
+.crew{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.crew a,.crew span{color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:4px 11px;font-size:13.5px;text-decoration:none}
+.wrap{padding:14px;max-width:560px;margin:0 auto}
+.card{background:var(--surface);border-radius:16px;box-shadow:0 2px 10px rgba(11,18,32,.08);padding:16px;margin-bottom:14px}
+.lbl{font-size:12.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.big{font-size:23px;font-weight:700;margin:4px 0 2px;line-height:1.2}
+.rem{background:var(--warnbg);color:#7c4a03;border-radius:10px;padding:8px 10px;font-size:14px;margin:8px 0 0}
+.times{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0 4px}
+.times div{background:var(--surface2);border-radius:10px;padding:8px 10px}
+.times b{display:block;font-size:20px}
+.times small{color:var(--muted);font-size:12.5px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:0;border-radius:14px;padding:16px;font-size:18px;font-weight:700;cursor:pointer;margin-top:10px;text-decoration:none;min-height:58px}
+.btn.nav{background:#1d4ed8;color:#fff}
+.btn.go{background:var(--ok);color:#fff}
+.btn.main{background:var(--brand);color:#fff}
+.btn.sec{background:var(--surface2);color:var(--ink);border:1.5px solid var(--line);font-size:16px;min-height:50px;padding:12px}
+.btn:disabled{opacity:.5}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row2 .btn{margin-top:10px}
+.st{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12.5px;font-weight:700;background:rgba(255,255,255,.16)}
+.late{color:var(--bad);font-weight:700}.early,.ontime{color:var(--ok);font-weight:700}
+.list{list-style:none;margin:0;padding:0}
+.list li{display:grid;grid-template-columns:30px 1fr auto;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);align-items:start}
+.list li:last-child{border-bottom:0}
+.list .n{width:28px;height:28px;border-radius:50%;background:var(--surface2);display:grid;place-items:center;font-weight:700;font-size:13px}
+.list li.done .n{background:var(--ok);color:#fff}.list li.cur .n{background:var(--brand);color:#fff}
+.list li.done{color:var(--muted)}
+.list .t{text-align:right;font-size:13.5px;white-space:nowrap}
+.list small{display:block;color:var(--muted);font-size:12.5px}
+.loc{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.loc input{width:22px;height:22px;margin-top:2px;flex:none}
+.note{font-size:13px;color:var(--muted)}
+.msg{text-align:center;padding:40px 18px}
+.bar{height:8px;border-radius:5px;background:var(--surface2);overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--ok)}
+.banner{background:var(--warnbg);color:#7c4a03;font-size:13.5px;padding:8px 14px;text-align:center;display:none}
+.banner.show{display:block}
+.link{background:none;border:0;color:var(--info);text-decoration:underline;padding:6px 0;cursor:pointer;font-size:14px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 16px;border-radius:12px;font-weight:600;font-size:14.5px;opacity:0;transition:.25s;pointer-events:none;max-width:92vw;z-index:10}
+.toast.show{opacity:1}
+.toast.bad{background:var(--bad)}
+</style>
+</head>
+<body>
+<div class="banner" id="offline">You are offline. Taps are saved on this phone and sent when the internet is back.</div>
+<header class="top" id="top"><div class="org" id="org">Ambulance deployment</div><h1 id="reg">Loading…</h1><div class="sub" id="sub"></div><div class="crew" id="crew"></div><div class="bar" id="barWrap" style="display:none;background:rgba(255,255,255,.15)"><i id="bar"></i></div></header>
+<div class="wrap" id="main"><div class="msg">Loading your route…</div></div>
+<div class="toast" id="toast"></div>
+<script src="config.js"></script>
+<script src="supabase.js"></script>
+<script src="common.js"></script>
+<script src="db.js"></script>
+<script>
+'use strict';
+const { esc, fmt, istHM, niceDate, navUrl, progressInfo, delayText, ago } = AP;
+const $ = id => document.getElementById(id);
+const TOKEN = (new URLSearchParams(location.hash.replace(/^#/, '')).get('t') || new URLSearchParams(location.search).get('t') || '').trim();
+const QK = 'ap-team-q-' + TOKEN, LK = 'ap-team-last-' + TOKEN;
+let V = null, busyAct = false, watchId = null, lastPing = 0, lastPingPos = null, wake = null;
+function toast(m, bad) { const t = $('toast'); t.textContent = m; t.className = 'toast show' + (bad ? ' bad' : ''); clearTimeout(toast.t); toast.t = setTimeout(() => { t.className = 'toast'; }, 3500); }
+const queue = () => { try { return JSON.parse(localStorage.getItem(QK) || '[]'); } catch (e) { return []; } };
+const setQueue = q => { try { localStorage.setItem(QK, JSON.stringify(q)); } catch (e) {} };
+if (AP.CFG.ORG_NAME) $('org').textContent = AP.CFG.ORG_NAME + ' · ambulance deployment';
+
+async function load(quiet) {
+  if (!TOKEN) return fail('This link is incomplete. Scan the QR code again or ask the control room for the link.');
+  try {
+    await flush();
+    const v = await DB.rpc('team_get', { p_token: TOKEN });
+    if (!v) return fail('This link is not valid any more (the deployment may have been cancelled or a new link was made). Ask the control room for the latest QR.');
+    V = v; try { localStorage.setItem(LK, JSON.stringify(v)); } catch (e) {}
+    render();
+  } catch (e) {
+    if (!V) { try { V = JSON.parse(localStorage.getItem(LK) || 'null'); } catch (er) {} }
+    if (V) { render(); if (!quiet) toast('Could not refresh: showing the last saved copy.', true); }
+    else fail(DB.cloud ? 'Could not load the route: ' + e.message : 'This app is not connected to its database yet (demo mode). Open this link on the same computer that made it, or ask the admin to finish setup.');
+  }
+}
+function fail(m) { $('reg').textContent = 'Route not available'; $('sub').textContent = ''; $('crew').innerHTML = ''; $('main').innerHTML = `<div class="card msg">${esc(m)}</div>`; }
+/* apply queued (not yet sent) taps on top of the server copy so the screen is always current */
+function localProgress() {
+  const pr = JSON.parse(JSON.stringify(V.progress || {})); pr.stops = pr.stops || {};
+  queue().forEach(q => {
+    if (q.kind === 'complete') pr.done = q.at;
+    else if (q.kind === 'undo') { if (pr.done) delete pr.done; else { const n = (V.plan.stops || []).length; for (let i = n - 1; i >= 0; i--) { const e = pr.stops[i]; if (e && Object.keys(e).length) { for (const k of ['dep', 'halt', 'arr']) if (e[k]) { delete e[k]; break; } break; } } } }
+    else { const e = pr.stops[q.stop] = pr.stops[q.stop] || {}; if (!e[q.kind]) e[q.kind] = q.at; if ((q.kind === 'halt' || q.kind === 'dep') && !e.arr) e.arr = q.at; }
+  });
+  return pr;
+}
+function render() {
+  const plan = V.plan || {}, stops = plan.stops || [], pr = localProgress(), pi = progressInfo(plan, pr);
+  $('reg').textContent = V.reg_no || 'Ambulance';
+  $('sub').innerHTML = `${esc(niceDate(V.date))} · ${esc(V.start_time)}–${esc(V.end_time)} · <span class="st">${esc(pr.done ? 'Completed' : pi.started ? 'In progress' : V.status)}</span><br>${esc(plan.route_name || '')}`;
+  const tel = (p, role) => p && p.phone ? `<a href="tel:${esc(String(p.phone).replace(/[^\d+]/g, ''))}">${role}: ${esc(p.name)} 📞</a>` : p ? `<span>${role}: ${esc(p.name)}</span>` : '';
+  $('crew').innerHTML = [tel(V.pilot, 'Pilot'), tel(V.emt, 'EMT')].filter(Boolean).join('');
+  $('barWrap').style.display = stops.length ? '' : 'none'; $('bar').style.width = (stops.length ? pi.nDone / stops.length * 100 : 0) + '%';
+  if (!stops.length) { $('main').innerHTML = '<div class="card msg">No stops in this deployment yet. Ask the control room.</div>'; return; }
+  let cur = '';
+  const dl = m => { const t = delayText(m); return t ? `<span class="${m >= 3 ? 'late' : 'ontime'}">${t}</span>` : ''; };
+  if (pr.done) cur = `<div class="card"><div class="lbl">Deployment</div><div class="big">Completed ✓</div><div class="note">Finished at ${istHM(pr.done)}. Thank you.</div><button class="link" data-a="undo">Undo (tapped by mistake)</button></div>`;
+  else if (pi.allDeparted) cur = `<div class="card"><div class="lbl">All ${stops.length} stops done</div><div class="big">Finish the deployment</div><button class="btn main" data-a="complete">Complete deployment</button><button class="link" data-a="undo">Undo last tap</button></div>`;
+  else {
+    const r = pi.rows[pi.cur], s = r.stop, at = r.st === 'at', next = stops[pi.cur + 1];
+    cur = `<div class="card">
+      <div class="lbl">${at ? `At stop ${pi.cur + 1} of ${stops.length}` : pi.cur === 0 && !pi.started ? `First stop · 1 of ${stops.length}` : `Next stop · ${pi.cur + 1} of ${stops.length}`}</div>
+      <div class="big">${esc(s.name)}</div>
+      ${s.remarks ? `<div class="rem">${esc(s.remarks)}</div>` : ''}
+      <div class="times">
+        <div><small>${at ? 'Reached at' : 'Reach by'}</small><b>${at ? istHM(r.actArr) : istHM(s.arr)}</b><small>${at ? dl(r.arrDelay) : pi.started && Math.abs(pi.delay) >= 3 ? `expected ${istHM(r.etaArr)}` : ''}</small></div>
+        <div><small>Leave at</small><b>${istHM(s.dep)}</b><small>${s.halt ? `halt ${s.halt} min` : ''}${at && r.actHalt ? ' · halt started ' + istHM(r.actHalt) : ''}</small></div>
+      </div>
+      ${pi.started && !at ? `<div class="note">Running ${dl(pi.delay) || 'on time'}</div>` : ''}
+      ${at ? `${!r.actHalt ? '<button class="btn sec" data-a="halt">Start halt</button>' : ''}
+              <button class="btn go" data-a="dep">Depart${next ? ` → ${esc(next.name)}` : ' (last stop)'}</button>
+              ${next ? `<a class="btn nav" href="${navUrl(next.lat, next.lng)}" target="_blank" rel="noopener">Navigate to next point</a>` : ''}`
+            : `<a class="btn nav" href="${navUrl(s.lat, s.lng)}" target="_blank" rel="noopener">Navigate to ${pi.cur === 0 && !pi.started ? 'first' : 'next'} point</a>
+              <button class="btn main" data-a="arr">Reached location</button>`}
+      <div class="row2"><a class="link" href="geo:${s.lat},${s.lng}?q=${s.lat},${s.lng}(${encodeURIComponent(s.name)})">Other maps app</a>${pi.started ? '<button class="link" style="text-align:right" data-a="undo">Undo last tap</button>' : ''}</div>
+    </div>`;
+  }
+  const items = pi.rows.map(r => `<li class="${r.st === 'done' ? 'done' : r.i === pi.cur ? 'cur' : ''}"><span class="n">${r.st === 'done' ? '✓' : r.i + 1}</span><span>${esc(r.stop.name)}${r.stop.remarks ? `<small>${esc(r.stop.remarks)}</small>` : ''}${r.stop.km != null ? `<small>${fmt(r.stop.km)} km from previous</small>` : ''}</span><span class="t">${r.actArr ? `${istHM(r.actArr)}${r.actDep ? '–' + istHM(r.actDep) : ''}<small>actual</small>` : `${istHM(r.stop.arr)}–${istHM(r.stop.dep)}<small>planned</small>`}</span></li>`).join('');
+  const q = queue().length;
+  $('main').innerHTML = cur + `
+    <div class="card"><div class="lbl">Route · ${pi.nDone} of ${stops.length} done</div><ul class="list">${items}</ul></div>
+    <div class="card"><label class="loc"><input type="checkbox" id="share"${watchId != null ? ' checked' : ''}><span><b>Share live location with the control room</b><br><span class="note">Only while this page is open. Your location is sent to your hospital’s control room for this deployment and stops when you untick this or finish.${lastPing ? ` Last sent ${ago(lastPing)}.` : ''}</span></span></label>
+    ${'wakeLock' in navigator ? `<label class="loc" style="margin-top:10px"><input type="checkbox" id="awake"${wake ? ' checked' : ''}><span>Keep the screen on</span></label>` : ''}</div>
+    <p class="note" style="text-align:center">${q ? `${q} tap${q > 1 ? 's' : ''} waiting to be sent · ` : ''}Updated ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} · <button class="link" id="reload">Refresh</button></p>`;
+}
+$('main').addEventListener('click', async e => {
+  const b = e.target.closest('[data-a]'); if (b) { e.preventDefault(); act(b.dataset.a); return; }
+  if (e.target.id === 'reload') load();
+});
+$('main').addEventListener('change', e => {
+  if (e.target.id === 'share') { if (e.target.checked) startShare(); else stopShare(); }
+  if (e.target.id === 'awake') keepAwake(e.target.checked);
+});
+async function act(kind) {
+  if (busyAct || !V) return;
+  const pi = progressInfo(V.plan, localProgress());
+  if (kind === 'undo' && !confirm('Undo your last tap?')) return;
+  if (kind === 'complete' && !confirm('Complete this deployment?')) return;
+  busyAct = true;
+  const q = queue(); q.push({ kind, stop: ['arr', 'halt', 'dep'].includes(kind) ? pi.cur : null, at: new Date().toISOString() }); setQueue(q);
+  render();
+  if (navigator.vibrate) navigator.vibrate(30);
+  toast(kind === 'arr' ? 'Arrival recorded' : kind === 'dep' ? 'Departure recorded' : kind === 'halt' ? 'Halt started' : kind === 'complete' ? 'Deployment completed' : 'Undone');
+  await flush(); busyAct = false;
+  if (kind === 'complete') stopShare();
+  if (kind === 'arr' || kind === 'dep') pingNow();
+}
+let flushing = false;
+async function flush() {
+  if (flushing) return; flushing = true;
+  try {
+    let q = queue();
+    while (q.length) {
+      const it = q[0];
+      try { const v = await DB.rpc('team_event', { p_token: TOKEN, p_stop: it.stop, p_kind: it.kind, p_at: it.at }); if (v) V = v; }
+      catch (e) { if (/not valid|Unknown/i.test(e.message)) { toast(e.message, true); } else break; }
+      q = queue(); q.shift(); setQueue(q);
+    }
+  } finally { flushing = false; if (V) { try { localStorage.setItem(LK, JSON.stringify(V)); } catch (e) {} render(); } }
+}
+/* live location (only with consent, only while the page is open) */
+function startShare() {
+  if (!('geolocation' in navigator)) { toast('This phone/browser cannot share location.', true); return; }
+  watchId = navigator.geolocation.watchPosition(p => {
+    const c = p.coords, nowT = Date.now(), moved = lastPingPos ? AP.haversine(lastPingPos, [c.latitude, c.longitude]) : 1;
+    if (nowT - lastPing < 30000 && moved < 0.15) return;
+    lastPing = nowT; lastPingPos = [c.latitude, c.longitude];
+    DB.rpc('team_ping', { p_token: TOKEN, p_lat: c.latitude, p_lng: c.longitude, p_acc: c.accuracy }).catch(() => {});
+  }, err => { toast(err.code === 1 ? 'Location permission was denied. Allow location for this site in the browser settings.' : 'Could not get location: ' + err.message, true); stopShare(); render(); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+  try { localStorage.setItem('ap-team-share-' + TOKEN, '1'); } catch (e) {}
+}
+function stopShare() { if (watchId != null) navigator.geolocation.clearWatch(watchId); watchId = null; try { localStorage.removeItem('ap-team-share-' + TOKEN); } catch (e) {} }
+function pingNow() { if (watchId == null) return; lastPing = 0; navigator.geolocation.getCurrentPosition(p => { lastPing = Date.now(); lastPingPos = [p.coords.latitude, p.coords.longitude]; DB.rpc('team_ping', { p_token: TOKEN, p_lat: p.coords.latitude, p_lng: p.coords.longitude, p_acc: p.coords.accuracy }).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 20000 }); }
+async function keepAwake(on) { try { if (on) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } else if (wake) { await wake.release(); wake = null; } } catch (e) { toast('Could not keep the screen on.', true); } }
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { load(true); if (wake === null && $('awake') && $('awake').checked) keepAwake(true); } });
+window.addEventListener('hashchange', () => location.reload());
+window.addEventListener('online', () => { $('offline').classList.remove('show'); flush(); });
+window.addEventListener('offline', () => $('offline').classList.add('show'));
+if (!navigator.onLine) $('offline').classList.add('show');
+setInterval(() => { if (!document.hidden) load(true); }, 60000);
+try { if (localStorage.getItem('ap-team-share-' + TOKEN)) startShare(); } catch (e) {}
+load();
+</script>
+<script>
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
