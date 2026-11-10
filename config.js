@@ -16,7 +16,7 @@ window.APP_CONFIG = {
   OLA_MAPS_API_KEY: 'wd-N7yDEjeJKHOyuRc_KLdGD-ygkfp',    // maps.olakrutrim.com key (optional)
 
   // Google Maps for the Radius coverage module (optional)
-  GOOGLE_MAPS_API_KEY: '', // restricted to your Vercel site
+  GOOGLE_MAPS_API_KEY: 'AIzaSyCNRWwgj0P5NfF0R7Aad4Zg02kmYPx4Kbw', // restricted to your Vercel site
 
   // Organisation name shown on the team page and exports
   ORG_NAME: 'PB Health'
