@@ -24,7 +24,7 @@
   const chk = r => { if (r.error) { const err = new Error(friendly(r.error)); err.raw = r.error; throw err; } return r.data; };
 
   /* ---------------- demo (this browser) ---------------- */
-  const LK = 'ap-local-db', TABLES = ['staff', 'ambulances', 'routes', 'deployments', 'pings', 'pop_grid', 'app_settings', 'app_admins'];
+  const LK = 'ap-local-db', TABLES = ['staff', 'ambulances', 'places', 'routes', 'deployments', 'pings', 'pop_grid', 'app_settings', 'app_admins', 'radius_layouts'];
   function lload() { let o = {}; try { o = JSON.parse(localStorage.getItem(LK) || '{}') || {}; } catch (e) {} TABLES.forEach(t => { if (!Array.isArray(o[t])) o[t] = []; }); return o; }
   function lsave(o) { try { localStorage.setItem(LK, JSON.stringify(o)); } catch (e) { throw new Error('This browser’s storage is full. Demo mode keeps data in the browser only; connect Supabase for real use.'); } }
   const now = () => new Date().toISOString();
@@ -42,6 +42,7 @@
         if (t === 'deployments') row = { status: 'Planned', plan: {}, progress: {}, start_time: '08:00', end_time: '16:00', token: token(), ...row };
         if (t === 'ambulances') row = { type: 'BLS', active: true, ...row };
         if (t === 'staff') row = { role: 'Pilot', active: true, ...row };
+        if (t === 'places') row = { kind: 'Hospital', active: true, ...row };
         o[t].push(row);
       }
       out.push(row);
@@ -96,7 +97,7 @@
   }
 
   /* ---------------- public API ---------------- */
-  const ORDER = { staff: 'name', ambulances: 'reg_no', routes: 'name', deployments: 'dep_date', pings: 'at', pop_grid: 'id', app_settings: 'key', app_admins: 'email' };
+  const ORDER = { staff: 'name', ambulances: 'reg_no', places: 'name', radius_layouts: 'name', routes: 'name', deployments: 'dep_date', pings: 'at', pop_grid: 'id', app_settings: 'key', app_admins: 'email' };
   async function list(t, q = {}) {
     if (!cloud) {
       let r = lload()[t];

@@ -35,6 +35,32 @@ create table if not exists public.ambulances (
   updated_at    timestamptz not null default now()
 );
 
+-- ---------- Hospitals, ambulance bases and standby points ----------
+create table if not exists public.places (
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null check (length(trim(name)) > 0),
+  kind         text not null default 'Hospital' check (kind in ('Hospital', 'Base', 'Standby', 'Other')),
+  lat          double precision not null check (lat between -90 and 90),
+  lng          double precision not null check (lng between -180 and 180),
+  address      text,
+  phone        text,
+  capabilities text,
+  notes        text,
+  active       boolean not null default true,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+-- ---------- Radius coverage: saved layouts (whole map layout as JSON) ----------
+create table if not exists public.radius_layouts (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null check (length(trim(name)) > 0),
+  data       jsonb not null default '{}'::jsonb,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- ---------- Routes: ordered stops, timings, cached road legs ----------
 create table if not exists public.routes (
   id         uuid primary key default gen_random_uuid(),
@@ -121,7 +147,7 @@ language plpgsql as $$ begin new.updated_at := now(); return new; end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['staff', 'ambulances', 'routes', 'deployments', 'app_settings'] loop
+  foreach t in array array['staff', 'ambulances', 'places', 'radius_layouts', 'routes', 'deployments', 'app_settings'] loop
     execute format('drop trigger if exists touch_%1$s on public.%1$s', t);
     execute format('create trigger touch_%1$s before update on public.%1$s for each row execute function public.touch_updated_at()', t);
   end loop;
@@ -135,7 +161,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['staff', 'ambulances', 'routes', 'deployments', 'pings', 'pop_grid', 'app_settings', 'app_admins'] loop
+  foreach t in array array['staff', 'ambulances', 'places', 'radius_layouts', 'routes', 'deployments', 'pings', 'pop_grid', 'app_settings', 'app_admins'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists admin_all on public.%I', t);
     execute format('create policy admin_all on public.%I for all to authenticated using (public.is_admin()) with check (public.is_admin())', t);

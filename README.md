@@ -17,7 +17,8 @@ The only file you edit. Fill in the values between the quotes:
 | Setting | Needed for | Where to get it |
 |---|---|---|
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Route deployment (database, admin login, QR links on any phone) | supabase.com → your project → Project Settings → API |
-| `ORS_API_KEY` | Road distances and routes (Route deployment) | openrouteservice.org → Dashboard → token (free, no card) |
+| `ORS_API_KEY` | Road distances and routes (Route deployment), road-time coverage and “Optimise order” | openrouteservice.org → Dashboard → token (free, no card) |
+| `TOMTOM_API_KEY` | Optional: road times with typical traffic for the route’s start time; traffic calibration in Radius coverage | developer.tomtom.com → Dashboard → Keys (free, no card) |
 | `OLA_MAPS_API_KEY` | Optional second routing engine | maps.olakrutrim.com |
 | `GOOGLE_MAPS_API_KEY` | Optional Google map, search and traffic in Radius coverage | Google Cloud console (restrict to your site) |
 | `ORG_NAME` | Name on team page and exports | — |
@@ -26,7 +27,7 @@ Without Supabase the Route module runs in **demo mode**: data stays in that brow
 
 ## Database: `setup.sql`
 
-Run it once in Supabase → SQL Editor. It creates the tables (staff, ambulances, routes, deployments, pings, pop_grid, app_settings, app_admins), the access rules and the three functions the team page uses. Running it again is safe.
+Run it once in Supabase → SQL Editor. It creates the tables (staff, ambulances, places (hospitals & bases), routes, deployments, pings, pop_grid, app_settings, app_admins), the access rules and the three functions the team page uses. Running it again is safe and is how you update: it only adds what is missing and never deletes data.
 
 Security model:
 - Admin pages need a Supabase login **and** the email on the admin list (`app_admins`). The first person to sign in becomes admin; add others in Route deployment → Settings → Admins.
@@ -35,12 +36,29 @@ Security model:
 
 ## How the numbers are worked out
 
-- **Road distance**: from openrouteservice (OpenStreetMap roads) or Ola Maps, per leg. If a leg has no road route, its times stay blank; there is no straight-line fallback. A deployment can’t be shared until every leg has a road route.
+- **Road distance**: from openrouteservice (OpenStreetMap roads), TomTom (with typical traffic) or Ola Maps, per leg. If a leg has no road route, its times stay blank; there is no straight-line fallback. A deployment can’t be shared until every leg has a road route.
 - **Travel time**: road distance ÷ planned speed (default per route, override per stop), or the routing engine’s own estimate if you choose that.
 - **Schedule**: start time → arrive → halt → leave → travel → next arrival. Change speed, halt, order or start time and all later times move. A fixed arrival or departure typed for a stop is marked *manual*, and later stops show how much they moved.
 - **Population**: typed per stop, or from an uploaded population grid (CSV lat, lng, pop) within each stop’s radius. Overlapping circles are flagged; with a grid, the total counts each grid point once (unique population).
 - **Delay**: actual time tapped by the crew minus planned time. Later stops’ ETAs move by the current delay.
 - **Live location**: only while the crew has the team page open and has ticked “Share live location”. Scanning the QR is not tracking.
+
+## Radius coverage features (new)
+
+- **Coverage shape** (Settings → Map & scenario): *Circle* or *Hexagon*. A hexagon has its corners at the ambulance's radius; coverage %, overlap and response figures are counted inside the hexagons.
+- **Hexagon grid** (Overlay → Hexagon grid): the target zone tiled with equal hexagons (0.5–3 km wide), each coloured by call → scene time from its centre. Hover a hexagon for the nearest ambulance, minutes, whether it is inside a coverage area, and its share of calls. The map key counts hexagons and calls per time band.
+- **Saved layouts (database)** (Settings): save named layouts to Supabase (table `radius_layouts`), open them on any device, and autosave the open one. Admin sign-in is the same as Route deployment. Without Supabase they stay in the browser. The Route module's scenario file also backs them up.
+
+## Route module features
+
+- **Hospitals & bases** (Ambulances & staff tab, or “Add hospital / base” on the map): shown on both maps; pick one as an ambulance’s base; “Start at a base…” uses them; each stop’s hover shows the nearest hospital. Radius coverage → Bulk action → *Sync ambulances & hospitals* copies them across (same browser).
+- **Show routes**: *This route*, *All routes* (each route in its own colour with a legend, total area, population and cross-route overlaps) or *By ambulance* (its default route plus routes of its deployments in the loaded roster weeks).
+- **Hover** any stop for arrival, halt, departure, distance and speed from the previous stop, next stop, population and nearest hospital; hover a road for that leg’s times.
+- **Import routes (Excel template)**: sheets *Routes* and *Stops*; location as lat, lng, a Google Maps link or a place name. A route with the same name is replaced. Roads are measured on import. *Download all routes* gives the same format.
+- **Optimise order** (first stop fixed, optionally last), **Reverse**, **Print this route**.
+- **Map & scenario**: base maps (streets, satellite with roads, light grey, OpenStreetMap), toggles for hospitals, circles and stop names, and a *scenario file* (JSON backup of all data) to save or load.
+- Deployment editor warns when the route ends after the shift.
+- Team page: “Open the remaining stops in Google Maps” (up to 10 at a time).
 
 ## Files
 

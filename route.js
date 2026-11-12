@@ -50,7 +50,7 @@ function showTab(t) {
   if (t === 'roster') renderRoster();
   if (t === 'live') { lmap.invalidateSize(); loadLive(); }
   if (t === 'dash') loadDash();
-  if (t === 'masters') renderMasters();
+  if (t === 'masters') { renderMasters(); renderPlaces(); }
   if (t === 'settings') renderSettings();
 }
 $('tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); });
@@ -60,10 +60,19 @@ $('tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab
    ========================================================= */
 const ENGINES = {
   ors: { name: 'openrouteservice', short: 'ORS', key: () => keyOf('ORS_API_KEY'), note: 'Road distance and normal (no live traffic) drive time from OpenStreetMap roads.' },
-  ola: { name: 'Ola Maps', short: 'Ola', key: () => keyOf('OLA_MAPS_API_KEY'), note: 'Road distance and drive time with current traffic, from Ola Maps.' }
+  tomtom: { name: 'TomTom (with traffic)', short: 'TomTom', key: () => keyOf('TOMTOM_API_KEY'), note: 'Road distance and drive time with TomTom’s usual traffic for the route’s start time on the next weekday (free key, no card). Halts are not part of TomTom’s clock, so later legs use traffic for slightly earlier times.' },
+  ola: { name: 'Ola Maps', short: 'Ola', key: () => keyOf('OLA_MAPS_API_KEY'), note: 'Road distance and drive time with current traffic, from Ola Maps (paid beyond its free quota).' }
 };
+/* cache tag: TomTom times depend on the start time, the others don't */
+const engTag = d => d.engine === 'tomtom' ? `tomtom@${d.start_time}` : d.engine;
+/* next weekday (Mon–Fri) at hh:mm IST, never in the past */
+function nextWeekdayISO(hm) {
+  const m = hm2min(hm) ?? 480; let ds = todayIST();
+  for (let k = 0; k < 8; k++) { const t = new Date(istISO(ds, m)), wd = AP.istParts(t).wd; if (t > Date.now() + 5 * 60000 && wd >= 1 && wd <= 5) return { iso: `${ds}T${min2hm(m)}:00+05:30`, label: `${AP.WD[wd]} ${min2hm(m)}` }; ds = addDays(ds, 1); }
+  return { iso: `${ds}T${min2hm(m)}:00+05:30`, label: min2hm(m) };
+}
 const engReady = e => !!(ENGINES[e] && ENGINES[e].key());
-const firstEngine = () => ['ors', 'ola'].find(engReady) || null;
+const firstEngine = () => ['ors', 'tomtom', 'ola'].find(engReady) || null;
 const r5 = v => (+v).toFixed(5);
 const legKey = (eng, a, b) => `${eng}|${r5(a.lat)},${r5(a.lng)}>${r5(b.lat)},${r5(b.lng)}`;
 function thin(pts, max = 160) { if (pts.length <= max) return pts.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]); const out = [], st = (pts.length - 1) / (max - 1); for (let i = 0; i < max; i++) { const p = pts[Math.round(i * st)]; out.push([+p[0].toFixed(5), +p[1].toFixed(5)]); } return out; }
@@ -98,6 +107,20 @@ async function orsLegs(pts) {
   }
   return out;
 }
+/* TomTom: whole chain in one call (≤ 150 points per call), traffic for the given departure */
+async function tomtomLegs(pts, depIso) {
+  const out = [];
+  for (let s = 0; s < pts.length - 1; s += 149) {
+    const chunk = pts.slice(s, s + 150), path = chunk.map(p => `${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`).join(':');
+    const j = await httpJSON(`https://api.tomtom.com/routing/1/calculateRoute/${path}/json?key=${encodeURIComponent(ENGINES.tomtom.key())}&traffic=true&travelMode=car&routeType=fastest&routeRepresentation=polyline&computeTravelTimeFor=all${depIso ? '&departAt=' + encodeURIComponent(depIso) : ''}`, {}, 'TomTom');
+    const r = j && j.routes && j.routes[0]; if (!r || !Array.isArray(r.legs)) throw new Error('TomTom returned no route');
+    for (let k = 0; k < chunk.length - 1; k++) {
+      const lg = r.legs[k]; if (!lg || !lg.summary) { out.push({ err: 'no route for this leg' }); continue; }
+      out.push({ km: lg.summary.lengthInMeters / 1000, min: lg.summary.travelTimeInSeconds / 60, geom: thin((lg.points || []).map(p => [p.latitude, p.longitude])) });
+    }
+  }
+  return out;
+}
 const valNum = v => v == null ? NaN : typeof v === 'number' ? v : typeof v === 'object' ? +(v.value ?? NaN) : parseFloat(v);
 function decodePoly(str, prec) { const f = Math.pow(10, prec), out = []; let i = 0, lat = 0, lng = 0; while (i < str.length) { let b, sh = 0, r = 0; do { b = str.charCodeAt(i++) - 63; r |= (b & 0x1f) << sh; sh += 5; } while (b >= 0x20 && i < str.length); lat += (r & 1) ? ~(r >> 1) : (r >> 1); sh = 0; r = 0; do { b = str.charCodeAt(i++) - 63; r |= (b & 0x1f) << sh; sh += 5; } while (b >= 0x20 && i < str.length); lng += (r & 1) ? ~(r >> 1) : (r >> 1); out.push([lat / f, lng / f]); } return out; }
 async function olaLeg(a, b) {
@@ -126,7 +149,7 @@ function normRoute(r) {
   d.legs = d.legs && typeof d.legs === 'object' ? d.legs : {};
   return r;
 }
-function legOf(r, a, b) { const k = legKey(r.data.engine, a, b); return LEG.get(k) || r.data.legs[k] || null; }
+function legOf(r, a, b) { const k = legKey(engTag(r.data), a, b); return LEG.get(k) || r.data.legs[k] || null; }
 const fixDay = (hm, ref) => { if (ref == null) return hm; return hm + 1440 * Math.round((ref - hm) / 1440); };
 function popOf(s, R) { if (s.pop_src === 'Grid') return S.grid ? gridSum([[s.lat, s.lng, num(s.radius) || R]], null) : null; return num(s.pop); }
 function schedule(r, startMin, noOverride) {
@@ -200,34 +223,36 @@ function gridSum(circles, perCircle) {
 /* =========================================================
    Routes: map
    ========================================================= */
-const osm = () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors' });
 const HOME = [28.479814, 77.074042];
-const rmap = L.map('rmap', { zoomControl: true, preferCanvas: false }).setView(HOME, 12); osm().addTo(rmap);
-const lmap = L.map('lmap', { zoomControl: true }).setView(HOME, 11); osm().addTo(lmap);
+const rmap = L.map('rmap', { zoomControl: true, preferCanvas: false }).setView(HOME, 12);
+const lmap = L.map('lmap', { zoomControl: true }).setView(HOME, 11);
 const rG = { line: L.layerGroup().addTo(rmap), circ: L.layerGroup().addTo(rmap), pins: L.layerGroup().addTo(rmap) };
 let addMode = false, showCirc = true;
 function setAddMode(on) { addMode = on; $('addMode').classList.toggle('on', on); rmap.getContainer().style.cursor = on ? 'crosshair' : ''; setStat(on ? 'Click the map to add stops · Esc to stop' : ''); }
 $('addMode').addEventListener('click', () => setAddMode(!addMode));
-$('circBtn').addEventListener('click', () => { showCirc = !showCirc; $('circBtn').classList.toggle('on', showCirc); drawRoute(); });
+$('circBtn').addEventListener('click', () => { showCirc = !showCirc; $('circBtn').classList.toggle('on', showCirc); $('shCirc').checked = showCirc; drawRoute(); });
 $('fitBtn').addEventListener('click', () => fitRoute());
 function setStat(t) { $('rStatus').innerHTML = t || ''; }
 const pinIcon = (n, cls) => L.divIcon({ className: 'mk', iconSize: [28, 28], iconAnchor: [14, 30], html: `<div class="pinnum ${cls || ''}"><span>${n}</span></div>` });
 function fitRoute() { const st = S.route && S.route.data.stops; if (st && st.length) rmap.fitBounds(L.latLngBounds(st.map(s => [s.lat, s.lng])).pad(0.2), { maxZoom: 15 }); }
-rmap.on('click', e => { if (!addMode || !S.route) return; addStop(e.latlng.lat, e.latlng.lng, null); });
+rmap.on('click', e => { if (placeMode) { openPlace(null, { lat: e.latlng.lat, lng: e.latlng.lng }); return; } if (!addMode || !S.route) return; addStop(e.latlng.lat, e.latlng.lng, null); });
 function drawRoute() {
   rG.line.clearLayers(); rG.circ.clearLayers(); rG.pins.clearLayers();
+  if (S.view !== 'one') { drawMany(); return; }
+  $('mLegend').classList.remove('show');
   const r = S.route; if (!r) return;
   const d = r.data, sc = schedule(r);
   d.stops.forEach((s, i) => {
     if (i) {
       const lg = legOf(r, d.stops[i - 1], s);
-      if (lg && lg.geom && lg.geom.length > 1) L.polyline(lg.geom, { color: '#2563eb', weight: 5, opacity: .85 }).addTo(rG.line);
+      if (lg && lg.geom && lg.geom.length > 1) L.polyline(lg.geom, { color: '#2563eb', weight: 5, opacity: .85 }).bindTooltip(() => legTip(r, sc, i), { sticky: true }).addTo(rG.line);
       else L.polyline([[d.stops[i - 1].lat, d.stops[i - 1].lng], [s.lat, s.lng]], { color: lg && lg.err ? '#dc2626' : '#94a3b8', weight: 2, dashArray: '4 8', opacity: .9 }).bindTooltip(lg && lg.err ? 'No road route: ' + esc(lg.err) : 'Waiting for road route').addTo(rG.line);
     }
     if (showCirc) { const rad = (num(s.radius) || d.radius) * 1000, ov = sc.tot.overlaps.some(p => p.includes(i)); L.circle([s.lat, s.lng], { radius: rad, color: ov ? '#d97706' : '#e11d48', weight: 1.2, fillOpacity: .06, interactive: false }).addTo(rG.circ); }
     const row = sc.rows[i];
     const m = L.marker([s.lat, s.lng], { draggable: true, icon: pinIcon(i + 1, i === 0 ? 'first' : ''), zIndexOffset: 500 }).addTo(rG.pins);
-    m.bindTooltip(`<b>${i + 1}. ${esc(s.name || 'Stop')}</b><br>${row.arr != null ? `Arrive ${min2hm(row.arr)} · leave ${min2hm(row.dep)}` : 'Times pending road route'}${row.pop != null ? `<br>Population ${fmtInt(row.pop)}` : ''}`, { direction: 'top', offset: [0, -28] });
+    m.bindTooltip(() => stopTip(r, sc, i), { direction: 'top', offset: [0, -28] });
+    if ($('shLabels').checked) L.marker([s.lat, s.lng], { interactive: false, keyboard: false, icon: L.divIcon({ className: 'mk', iconSize: [0, 0], html: `<span class="slabel">${esc(row ? `${s.name} · ${min2hm(row.arr)}` : s.name)}</span>` }) }).addTo(rG.pins);
     m.on('dragend', () => { const p = m.getLatLng(); s.lat = +p.lat.toFixed(6); s.lng = +p.lng.toFixed(6); markDirty(); renderRoute(); });
   });
 }
@@ -236,23 +261,27 @@ function drawRoute() {
    Routes: road legs
    ========================================================= */
 let legTimer = 0, legGen = 0;
-function needLegs(r) { const d = r.data, out = []; for (let i = 1; i < d.stops.length; i++) { const k = legKey(d.engine, d.stops[i - 1], d.stops[i]); if (!LEG.has(k) && !d.legs[k]) out.push(i); } return out; }
+function needLegs(r) { const d = r.data, out = []; for (let i = 1; i < d.stops.length; i++) { const k = legKey(engTag(d), d.stops[i - 1], d.stops[i]); if (!LEG.has(k) && !d.legs[k]) out.push(i); } return out; }
 function queueLegs() { clearTimeout(legTimer); legTimer = setTimeout(fetchLegs, 600); }
 async function fetchLegs(force) {
   const r = S.route; if (!r) return;
   const d = r.data, need = force ? d.stops.slice(1).map((_, i) => i + 1) : needLegs(r);
   if (!need.length) { setStat(addMode ? 'Click the map to add stops · Esc to stop' : ''); return; }
   if (!engReady(d.engine)) { setStat(`<span class="err">No road routing key for ${esc(ENGINES[d.engine].name)}.</span> Add it in config.js (see the setup guide). Times stay blank until roads are measured.`); renderRoute(true); return; }
-  const gen = ++legGen, eng = d.engine;
+  const gen = ++legGen, eng = d.engine, tag = engTag(d);
   setStat(`Getting road route from ${esc(ENGINES[eng].name)}… (${need.length} leg${need.length > 1 ? 's' : ''})`);
   try {
     if (eng === 'ors') {
       const pts = d.stops.map(s => ({ lat: s.lat, lng: s.lng })), legs = await orsLegs(pts);
       if (gen !== legGen) return;
-      legs.forEach((lg, k) => { LEG.set(legKey(eng, pts[k], pts[k + 1]), lg); });
+      legs.forEach((lg, k) => { LEG.set(legKey(tag, pts[k], pts[k + 1]), lg); });
+    } else if (eng === 'tomtom') {
+      const pts = d.stops.map(s => ({ lat: s.lat, lng: s.lng })), legs = await tomtomLegs(pts, nextWeekdayISO(d.start_time).iso);
+      if (gen !== legGen) return;
+      legs.forEach((lg, k) => { LEG.set(legKey(tag, pts[k], pts[k + 1]), lg); });
     } else {
       for (let n = 0; n < need.length; n++) {
-        const i = need[n], a = d.stops[i - 1], b = d.stops[i], k = legKey(eng, a, b);
+        const i = need[n], a = d.stops[i - 1], b = d.stops[i], k = legKey(tag, a, b);
         setStat(`Getting road route from Ola Maps… ${n + 1}/${need.length}`);
         try { LEG.set(k, await olaLeg(a, b)); } catch (e) { if (/refused the key|limit/i.test(e.message)) throw e; LEG.set(k, { err: e.message }); }
         if (gen !== legGen) return;
@@ -261,9 +290,9 @@ async function fetchLegs(force) {
     setStat('');
   } catch (e) {
     if (gen !== legGen) return;
-    need.forEach(i => { const k = legKey(eng, d.stops[i - 1], d.stops[i]); if (!LEG.has(k)) LEG.set(k, { err: e.message }); });
+    need.forEach(i => { const k = legKey(tag, d.stops[i - 1], d.stops[i]); if (!LEG.has(k)) LEG.set(k, { err: e.message }); });
     setStat(`<span class="err">${esc(e.message)}</span> <button class="btn sm" id="legRetry">Retry</button>`);
-    const b = $('legRetry'); if (b) b.onclick = () => { need.forEach(i => LEG.delete(legKey(eng, d.stops[i - 1], d.stops[i]))); fetchLegs(); };
+    const b = $('legRetry'); if (b) b.onclick = () => { need.forEach(i => LEG.delete(legKey(tag, d.stops[i - 1], d.stops[i]))); fetchLegs(); };
   }
   if (gen === legGen && S.route === r) renderRoute(true);
 }
@@ -280,7 +309,7 @@ function renderRouteSel() {
 }
 function renderEngineSel() {
   const d = S.route.data;
-  $('rEngine').innerHTML = Object.entries(ENGINES).map(([k, e]) => opt(k, `${e.name}${engReady(k) ? '' : ' (no key)'}`, d.engine === k)).join('');
+  $('rEngine').innerHTML = Object.entries(ENGINES).filter(([k]) => k !== 'ola' || engReady(k) || d.engine === k).map(([k, e]) => opt(k, `${e.name}${engReady(k) ? '' : ' (no key)'}`, d.engine === k)).join('');
   $('engineNote').innerHTML = `${esc(ENGINES[d.engine].note)}${engReady(d.engine) ? '' : ' <span class="err">No key set: add it in config.js.</span>'}${d.time_src === 'engine' ? ' Travel time uses the engine’s estimate; the speed column then shows the resulting average speed.' : ' Travel time = road distance ÷ planned speed (per-stop speed overrides the default).'}`;
 }
 function loadRouteToForm() {
@@ -288,7 +317,7 @@ function loadRouteToForm() {
   $('rName').value = r.name || ''; $('rStart').value = d.start_time; $('rSpeed').value = d.speed; $('rHalt').value = d.halt; $('rRadius').value = d.radius; $('rTimeSrc').value = d.time_src;
   renderEngineSel(); renderRouteSel(); clearDirty(); if (S.route._new) markDirty();
 }
-function setRoute(r) { S.route = normRoute(clone(r)); if (r._new) S.route._new = true; Object.entries(S.route.data.legs).forEach(([k, v]) => { if (!LEG.has(k)) LEG.set(k, v); }); loadRouteToForm(); renderRoute(); fitRoute(); queueLegs(); }
+function setRoute(r) { const on = $('optNote'); if (on) on.innerHTML = ''; S.route = normRoute(clone(r)); if (r._new) S.route._new = true; Object.entries(S.route.data.legs).forEach(([k, v]) => { if (!LEG.has(k)) LEG.set(k, v); }); loadRouteToForm(); renderRoute(); fitRoute(); queueLegs(); }
 [['rName', v => { S.route.name = v.trim().slice(0, 80); }], ['rStart', v => { if (hm2min(v) != null) S.route.data.start_time = v; }], ['rSpeed', v => { const n = num(v); if (n && n >= 5 && n <= 150) S.route.data.speed = n; }],
  ['rHalt', v => { const n = num(v); if (n != null && n >= 0) S.route.data.halt = n; }], ['rRadius', v => { const n = num(v); if (n && n > 0 && n <= 50) S.route.data.radius = n; }],
  ['rTimeSrc', v => { S.route.data.time_src = v; }], ['rEngine', v => { S.route.data.engine = v; queueLegs(); }]].forEach(([id, f]) => $(id).addEventListener('change', e => { f(e.target.value); markDirty(); renderEngineSel(); renderRoute(); }));
@@ -413,7 +442,7 @@ async function saveRoute() {
   const sc = schedule(r);
   if (sc.tot.incomplete && !confirm(`${sc.tot.pending ? 'Road distances are still being measured' : 'Some legs have no road route'}, so times are incomplete. Save anyway? Deployments can’t be shared with the team until every leg has a road route.`)) return false;
   // keep only legs for the current sequence
-  const legs = {}; for (let i = 1; i < r.data.stops.length; i++) { const k = legKey(r.data.engine, r.data.stops[i - 1], r.data.stops[i]), v = LEG.get(k) || r.data.legs[k]; if (v && !v.err) legs[k] = v; }
+  const legs = {}; for (let i = 1; i < r.data.stops.length; i++) { const k = legKey(engTag(r.data), r.data.stops[i - 1], r.data.stops[i]), v = LEG.get(k) || r.data.legs[k]; if (v && !v.err) legs[k] = v; }
   r.data.legs = legs;
   return await guard(async () => {
     const [row] = await DB.upsert('routes', [{ id: r.id, name: r.name, data: r.data }]);
@@ -449,10 +478,14 @@ function openScheduleTable() {
   };
 }
 $('fromBase').addEventListener('click', () => {
-  const list = S.amb.filter(a => a.base_lat != null && a.base_lng != null);
-  if (!list.length) { toast('No ambulance has a base location yet. Add bases in Ambulances & staff.', true); return; }
-  openModal(`<h2>Start the route at a base</h2><div class="tw"><table class="t"><tbody>${list.map(a => `<tr class="click" data-a="${esc(a.id)}"><td><b>${esc(a.reg_no)}</b> <span class="hint">${esc(a.type)}</span></td><td>${esc(a.base_name || '')}</td><td class="hint">${a.base_lat.toFixed(5)}, ${a.base_lng.toFixed(5)}</td></tr>`).join('')}</tbody></table></div><p class="note">Adds the base as stop 1 with no halt.</p>`);
-  $('mbody').querySelector('tbody').onclick = e => { const tr = e.target.closest('[data-a]'); if (!tr) return; const a = ambById(tr.dataset.a); closeModal(); const s = addStop(a.base_lat, a.base_lng, `Base – ${a.base_name || a.reg_no}`, 0); s.halt = 0; renderRoute(); fitRoute(); };
+  const list = S.amb.filter(a => a.base_lat != null && a.base_lng != null), pl = (S.places || []).filter(p => p.active !== false);
+  if (!list.length && !pl.length) { toast('No hospitals, bases or ambulance bases yet. Add them in Ambulances & staff.', true); return; }
+  openModal(`<h2>Start the route at a hospital or base</h2><div class="tw"><table class="t"><tbody>${pl.map(p => `<tr class="click" data-p="${esc(p.id)}"><td><b>${esc(p.name)}</b> <span class="hint">${esc(p.kind)}</span></td><td>${esc(p.address || '')}</td><td class="hint">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</td></tr>`).join('')}${list.map(a => `<tr class="click" data-a="${esc(a.id)}"><td><b>${esc(a.reg_no)}</b> <span class="hint">ambulance base</span></td><td>${esc(a.base_name || '')}</td><td class="hint">${a.base_lat.toFixed(5)}, ${a.base_lng.toFixed(5)}</td></tr>`).join('')}</tbody></table></div><p class="note">Adds it as stop 1 with no halt.</p>`);
+  $('mbody').querySelector('tbody').onclick = e => {
+    const tr = e.target.closest('[data-a],[data-p]'); if (!tr) return; closeModal();
+    const p = tr.dataset.p && S.places.find(q => q.id === tr.dataset.p), a = tr.dataset.a && ambById(tr.dataset.a);
+    const s = p ? addStop(p.lat, p.lng, p.name, 0) : addStop(a.base_lat, a.base_lng, `Base – ${a.base_name || a.reg_no}`, 0); s.halt = 0; renderRoute(); fitRoute();
+  };
 });
 
 /* ---------------- search ---------------- */
@@ -627,7 +660,7 @@ function openDep(d, preset) {
     const x = read(), r = routeById(x.route_id);
     if (r && !endTouched) { const sc = schedule(normRoute(clone(r)), hm2min(x.start_time)); if (sc.tot.end != null) $('dEnd').value = min2hm(Math.ceil(sc.tot.end / 15) * 15); }
     const y = read();
-    if (r) { const p = buildPlan(r, y), t = p.totals; $('dPrev').innerHTML = `${t.stops} stops · ${fmt(t.km)} km by road · drive ${dur(t.drive)} · halts ${dur(t.halt)} · route ends ${t.end ? istHM(t.end) : '–'}${t.pop_best != null ? ` · population ${fmtInt(t.pop_best)}` : ''}${p.incomplete ? ' · <span class="err">some legs have no road route: open the route and fix before sharing</span>' : ''}`; }
+    if (r) { const p = buildPlan(r, y), t = p.totals, over = t.end && new Date(t.end).getTime() > depSpan(y)[1]; $('dPrev').innerHTML = `${t.stops} stops · ${fmt(t.km)} km by road · drive ${dur(t.drive)} · halts ${dur(t.halt)} · route ends ${t.end ? istHM(t.end) : '–'}${t.pop_best != null ? ` · population ${fmtInt(t.pop_best)}` : ''}${over ? ` · <span class="warn">route ends after the shift (${esc(y.end_time)})</span>` : ''}${p.incomplete ? ' · <span class="err">some legs have no road route: open the route and fix before sharing</span>' : ''}`; }
     else $('dPrev').textContent = 'Pick a route to build the schedule.';
     if (y.dep_date) { try { await loadDeps(addDays(y.dep_date, -1), addDays(y.dep_date, 1)); } catch (e) {} }
     const c = conflictsFor(y, S.deps);
@@ -756,7 +789,7 @@ async function renderLiveDetail() {
   const box = $('liveDetail'), d = S.live.find(x => x.id === S.liveSel);
   if (!d) { box.style.display = 'none'; return; }
   const a = ambById(d.ambulance_id) || {}, { pi, off } = liveInfo(d);
-  pi.rows.forEach(r => { L.marker([r.stop.lat, r.stop.lng], { icon: pinIcon(r.i + 1, r.st === 'done' ? 'done' : r.st === 'at' ? 'at' : r.i === 0 ? 'first' : '') }).bindTooltip(`${r.i + 1}. ${esc(r.stop.name)}`).addTo(lG.stops); });
+  pi.rows.forEach(r => { L.marker([r.stop.lat, r.stop.lng], { icon: pinIcon(r.i + 1, r.st === 'done' ? 'done' : r.st === 'at' ? 'at' : r.i === 0 ? 'first' : '') }).bindTooltip(`<div class="tip"><b>${r.i + 1}. ${esc(r.stop.name)}</b><br>Planned ${istHM(r.stop.arr)}–${istHM(r.stop.dep)} · halt ${r.stop.halt ?? '–'} min${r.stop.km != null ? `<br>From previous: ${fmt(r.stop.km)} km · ${Math.round(r.stop.travel || 0)} min` : ''}<br>${r.actArr ? `Actual ${istHM(r.actArr)}${r.actDep ? '–' + istHM(r.actDep) : ' (at stop)'} · ${esc(delayText(r.arrDelay))}` : r.st === 'done' ? 'Done' : `Expected ${istHM(r.etaArr)}`}${r.stop.remarks ? `<br><i>${esc(r.stop.remarks)}</i>` : ''}</div>`).addTo(lG.stops); });
   box.style.display = '';
   box.innerHTML = `<h3>${esc(a.reg_no || '')} · ${esc(d.plan.route_name || '')}<span class="aside"><a href="${esc(teamUrl(d))}" target="_blank" rel="noopener">team page</a></span></h3>
     ${off ? `<p class="warn">Last location is ${fmt(off)} km from the planned route.</p>` : ''}
@@ -811,7 +844,7 @@ $('dTable').addEventListener('click', e => { const tr = e.target.closest('[data-
 /* =========================================================
    Masters: ambulances and staff (with bulk paste / upload)
    ========================================================= */
-function cacheMaster() { try { localStorage.setItem('ap-master', JSON.stringify({ at: new Date().toISOString(), ambulances: S.amb.map(a => ({ reg_no: a.reg_no, type: a.type, base_name: a.base_name, base_lat: a.base_lat, base_lng: a.base_lng, active: a.active })) })); } catch (e) {} }
+function cacheMaster() { try { localStorage.setItem('ap-master', JSON.stringify({ at: new Date().toISOString(), ambulances: S.amb.map(a => ({ reg_no: a.reg_no, type: a.type, base_name: a.base_name, base_lat: a.base_lat, base_lng: a.base_lng, active: a.active })), places: (S.places || []).map(p => ({ name: p.name, kind: p.kind, lat: p.lat, lng: p.lng, active: p.active, capabilities: p.capabilities })) })); } catch (e) {} }
 const AMB_KEYS = ['id', 'reg_no', 'type', 'base_name', 'base_lat', 'base_lng', 'default_pilot', 'default_emt', 'default_route', 'active', 'notes'];
 const STAFF_KEYS = ['id', 'name', 'role', 'phone', 'emp_code', 'active'];
 const pick = (o, keys) => { const r = {}; keys.forEach(k => { r[k] = o[k] === undefined ? null : o[k]; }); return r; };
@@ -820,7 +853,7 @@ function renderMasters() {
   const sOpts = (sel, role) => opt('', '—', !sel) + S.staff.filter(s => (s.active && s.role === role) || s.id === sel).map(s => opt(s.id, s.name, s.id === sel)).join('');
   const amb = S.amb.filter(a => !fa || JSON.stringify([a.reg_no, a.base_name, a.type]).toLowerCase().includes(fa));
   $('ambAside').textContent = `${S.amb.filter(a => a.active).length} active of ${S.amb.length}`;
-  $('ambTable').innerHTML = amb.length ? `<table class="t"><thead><tr><th>Reg. no</th><th>Type</th><th>Base name</th><th>Base lat, lng</th><th>Default pilot</th><th>Default EMT</th><th>Default route</th><th>Active</th><th></th></tr></thead><tbody>${amb.map(a => `<tr data-id="${esc(a.id)}"><td><input type="text" data-f="reg_no" value="${esc(a.reg_no)}" style="min-width:120px"></td><td><select data-f="type">${['BLS', 'ALS', 'PTV', 'FRV'].map(t => opt(t, t, a.type === t)).join('')}</select></td><td><input type="text" data-f="base_name" value="${esc(a.base_name || '')}" style="min-width:120px"></td><td><input type="text" data-f="base_ll" value="${a.base_lat != null ? `${a.base_lat}, ${a.base_lng}` : ''}" placeholder="lat, lng or Maps link" style="min-width:150px"></td><td><select data-f="default_pilot">${sOpts(a.default_pilot, 'Pilot')}</select></td><td><select data-f="default_emt">${sOpts(a.default_emt, 'EMT')}</select></td><td><select data-f="default_route">${opt('', '—', !a.default_route)}${S.routes.map(r => opt(r.id, r.name, r.id === a.default_route)).join('')}</select></td><td><input type="checkbox" data-f="active"${a.active ? ' checked' : ''}></td><td><button class="ico" data-del title="Delete">✕</button></td></tr>`).join('')}</tbody></table>` : '<p class="note" style="padding:12px">No ambulances yet. Paste them above or press Add one.</p>';
+  $('ambTable').innerHTML = amb.length ? `<table class="t"><thead><tr><th>Reg. no</th><th>Type</th><th>Base (from list)</th><th>Base name</th><th>Base lat, lng</th><th>Default pilot</th><th>Default EMT</th><th>Default route</th><th>Active</th><th></th></tr></thead><tbody>${amb.map(a => `<tr data-id="${esc(a.id)}"><td><input type="text" data-f="reg_no" value="${esc(a.reg_no)}" style="min-width:120px"></td><td><select data-f="type">${['BLS', 'ALS', 'PTV', 'FRV'].map(t => opt(t, t, a.type === t)).join('')}</select></td><td><select data-f="base_place">${opt('', '— pick —', true)}${(S.places || []).filter(p => p.active !== false).map(p => opt(p.id, `${p.name} (${p.kind})`)).join('')}</select></td><td><input type="text" data-f="base_name" value="${esc(a.base_name || '')}" style="min-width:120px"></td><td><input type="text" data-f="base_ll" value="${a.base_lat != null ? `${a.base_lat}, ${a.base_lng}` : ''}" placeholder="lat, lng or Maps link" style="min-width:150px"></td><td><select data-f="default_pilot">${sOpts(a.default_pilot, 'Pilot')}</select></td><td><select data-f="default_emt">${sOpts(a.default_emt, 'EMT')}</select></td><td><select data-f="default_route">${opt('', '—', !a.default_route)}${S.routes.map(r => opt(r.id, r.name, r.id === a.default_route)).join('')}</select></td><td><input type="checkbox" data-f="active"${a.active ? ' checked' : ''}></td><td><button class="ico" data-del title="Delete">✕</button></td></tr>`).join('')}</tbody></table>` : '<p class="note" style="padding:12px">No ambulances yet. Paste them above or press Add one.</p>';
   const st = S.staff.filter(s => !fs || JSON.stringify([s.name, s.phone, s.emp_code, s.role]).toLowerCase().includes(fs));
   $('staffAside').textContent = `${S.staff.filter(s => s.active && s.role === 'Pilot').length} pilots · ${S.staff.filter(s => s.active && s.role === 'EMT').length} EMTs`;
   $('staffTable').innerHTML = st.length ? `<table class="t"><thead><tr><th>Name</th><th>Role</th><th>Phone</th><th>Emp. code</th><th>Default crew on</th><th>Active</th><th></th></tr></thead><tbody>${st.map(s => `<tr data-id="${esc(s.id)}"><td><input type="text" data-f="name" value="${esc(s.name)}" style="min-width:140px"></td><td><select data-f="role">${opt('Pilot', 'Pilot / driver', s.role === 'Pilot')}${opt('EMT', 'EMT / paramedic', s.role === 'EMT')}</select></td><td><input type="tel" data-f="phone" value="${esc(s.phone || '')}" style="min-width:110px"></td><td><input type="text" data-f="emp_code" value="${esc(s.emp_code || '')}" style="min-width:90px"></td><td class="hint">${esc(S.amb.filter(a => a.default_pilot === s.id || a.default_emt === s.id).map(a => a.reg_no).join(', '))}</td><td><input type="checkbox" data-f="active"${s.active ? ' checked' : ''}></td><td><button class="ico" data-del title="Delete">✕</button></td></tr>`).join('')}</tbody></table>` : '<p class="note" style="padding:12px">No staff yet.</p>';
@@ -828,14 +861,15 @@ function renderMasters() {
 $('ambFind').addEventListener('input', renderMasters); $('staffFind').addEventListener('input', renderMasters);
 async function saveOne(table, row, keys) {
   const [r] = await DB.upsert(table, [pick(row, keys)]);
-  const arr = table === 'ambulances' ? S.amb : S.staff, i = arr.findIndex(x => x.id === r.id); if (i >= 0) arr[i] = r; else arr.push(r);
-  if (table === 'ambulances') { S.amb.sort((a, b) => a.reg_no.localeCompare(b.reg_no, 'en', { numeric: true })); cacheMaster(); } else S.staff.sort((a, b) => a.name.localeCompare(b.name));
+  const arr = table === 'ambulances' ? S.amb : table === 'places' ? S.places : S.staff, i = arr.findIndex(x => x.id === r.id); if (i >= 0) arr[i] = r; else arr.push(r);
+  if (table === 'ambulances') { S.amb.sort((a, b) => a.reg_no.localeCompare(b.reg_no, 'en', { numeric: true })); cacheMaster(); } else if (table === 'places') { S.places.sort((a, b) => a.name.localeCompare(b.name)); cacheMaster(); drawPlaces(); } else S.staff.sort((a, b) => a.name.localeCompare(b.name));
   return r;
 }
 $('ambTable').addEventListener('change', async e => {
   const tr = e.target.closest('[data-id]'), a = tr && ambById(tr.dataset.id), f = e.target.dataset.f; if (!a || !f) return;
   const x = { ...a }, v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-  if (f === 'base_ll') { if (!String(v).trim()) { x.base_lat = null; x.base_lng = null; } else { const p = parseLatLng(v); if (!p) { toast('Use “lat, lng” or a Google Maps link.', true); renderMasters(); return; } x.base_lat = +p.lat.toFixed(6); x.base_lng = +p.lng.toFixed(6); } }
+  if (f === 'base_place') { const p = (S.places || []).find(q => q.id === v); if (!p) return; x.base_name = p.name; x.base_lat = p.lat; x.base_lng = p.lng; }
+  else if (f === 'base_ll') { if (!String(v).trim()) { x.base_lat = null; x.base_lng = null; } else { const p = parseLatLng(v); if (!p) { toast('Use “lat, lng” or a Google Maps link.', true); renderMasters(); return; } x.base_lat = +p.lat.toFixed(6); x.base_lng = +p.lng.toFixed(6); } }
   else if (f === 'reg_no') { x.reg_no = normReg(v); if (!x.reg_no) { renderMasters(); return; } }
   else x[f] = v === '' ? null : v;
   const r = await guard(() => saveOne('ambulances', x, AMB_KEYS)); renderMasters(); if (r) toast(`${r.reg_no} saved`);
@@ -855,7 +889,7 @@ const normReg = v => String(v || '').toUpperCase().replace(/[\s\-.]/g, '').slice
 const digits = v => String(v || '').replace(/\D/g, '').slice(-10);
 
 /* ---- bulk import ---- */
-$('bulkKind').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; S.bulkKind = b.dataset.v; document.querySelectorAll('#bulkKind button').forEach(x => x.classList.toggle('on', x === b)); $('bulkText').placeholder = b.dataset.v === 'staff' ? 'Paste here, e.g.\nName\tRole\tPhone\tEmp code\nRavi Kumar\tPilot\t9876543210\tP101' : 'Paste here, e.g.\nReg no\tType\tBase name\tBase location\tDefault pilot\tDefault EMT\tDefault route\nHR26AB1234\tBLS\tIFFCO Chowk\t28.4798, 77.0740\tRavi Kumar\tSita Devi\tSohna loop'; S.bulk = null; $('bulkPrev').innerHTML = ''; $('bulkGo').disabled = true; });
+$('bulkKind').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; S.bulkKind = b.dataset.v; document.querySelectorAll('#bulkKind button').forEach(x => x.classList.toggle('on', x === b)); $('bulkText').placeholder = b.dataset.v === 'places' ? 'Paste here, e.g.\nName\tKind\tLocation\tAddress\tPhone\nPB Health Hospital\tHospital\t28.4798, 77.0740\tIFFCO Chowk\t0124…' : b.dataset.v === 'staff' ? 'Paste here, e.g.\nName\tRole\tPhone\tEmp code\nRavi Kumar\tPilot\t9876543210\tP101' : 'Paste here, e.g.\nReg no\tType\tBase name\tBase location\tDefault pilot\tDefault EMT\tDefault route\nHR26AB1234\tBLS\tIFFCO Chowk\t28.4798, 77.0740\tRavi Kumar\tSita Devi\tSohna loop'; S.bulk = null; $('bulkPrev').innerHTML = ''; $('bulkGo').disabled = true; });
 function splitRows(text) {
   const lines = String(text || '').replace(/\r/g, '').split('\n').filter(l => l.trim());
   if (!lines.length) return [];
@@ -870,6 +904,7 @@ const HDR = {
 function findStaff(v, pool) { const s = String(v || '').trim(); if (!s) return null; const lc = s.toLowerCase(), dg = digits(s); return pool.find(x => x.emp_code && x.emp_code.toLowerCase() === lc) || (dg.length === 10 && pool.find(x => digits(x.phone) === dg)) || pool.find(x => x.name.toLowerCase() === lc) || null; }
 const isActive = v => v == null || v === '' ? true : !/^(no|n|false|0|inactive|off)$/i.test(String(v).trim());
 function bulkCheck() {
+  if (S.bulkKind === 'places') return bulkCheckPlaces();
   const rows = splitRows($('bulkText').value); if (rows.length < 2) { $('bulkInfo').textContent = 'Paste a header row and at least one data row.'; return; }
   const kind = S.bulkKind, head = rows[0].map(h => h.toLowerCase().replace(/[^a-z0-9, ]/g, ' ').replace(/\s+/g, ' ').trim()), col = {};
   Object.entries(HDR[kind]).forEach(([k, re]) => { const i = head.findIndex(h => re.test(h)); if (i >= 0) col[k] = i; });
@@ -918,13 +953,13 @@ function bulkCheck() {
 $('bulkCheck').addEventListener('click', bulkCheck);
 $('bulkText').addEventListener('input', () => { $('bulkGo').disabled = true; });
 $('bulkGo').addEventListener('click', async () => {
-  const b = S.bulk; if (!b) return; const recs = b.rows.filter(x => x.rec).map(x => pick(x.rec, b.kind === 'staff' ? STAFF_KEYS : AMB_KEYS));
+  const b = S.bulk; if (!b) return; const recs = b.rows.filter(x => x.rec).map(x => pick(x.rec, b.kind === 'staff' ? STAFF_KEYS : b.kind === 'places' ? PLACE_KEYS : AMB_KEYS));
   await guard(async () => {
     const saved = await DB.upsert(b.kind, recs);
-    const arr = b.kind === 'staff' ? S.staff : S.amb; saved.forEach(r => { const i = arr.findIndex(x => x.id === r.id); if (i >= 0) arr[i] = r; else arr.push(r); });
-    if (b.kind === 'staff') S.staff.sort((x, y) => x.name.localeCompare(y.name)); else { S.amb.sort((x, y) => x.reg_no.localeCompare(y.reg_no, 'en', { numeric: true })); cacheMaster(); }
+    const arr = b.kind === 'staff' ? S.staff : b.kind === 'places' ? S.places : S.amb; saved.forEach(r => { const i = arr.findIndex(x => x.id === r.id); if (i >= 0) arr[i] = r; else arr.push(r); });
+    if (b.kind === 'staff') S.staff.sort((x, y) => x.name.localeCompare(y.name)); else if (b.kind === 'places') { S.places.sort((x, y) => x.name.localeCompare(y.name)); cacheMaster(); drawPlaces(); } else { S.amb.sort((x, y) => x.reg_no.localeCompare(y.reg_no, 'en', { numeric: true })); cacheMaster(); }
     $('bulkText').value = ''; $('bulkPrev').innerHTML = ''; $('bulkGo').disabled = true; S.bulk = null; $('bulkInfo').textContent = `${saved.length} saved.`;
-    renderMasters(); toast(`${saved.length} ${b.kind === 'staff' ? 'staff' : 'ambulances'} saved`);
+    renderMasters(); toast(`${saved.length} ${b.kind === 'staff' ? 'staff' : b.kind === 'places' ? 'hospitals / bases' : 'ambulances'} saved`);
   }, 'Importing…');
 });
 $('bulkFile').addEventListener('change', async e => {
@@ -932,7 +967,7 @@ $('bulkFile').addEventListener('change', async e => {
   try {
     if (/\.xlsx?$/i.test(f.name)) {
       const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
-      const want = S.bulkKind === 'staff' ? /staff|crew|pilot|emt/i : /amb|vehicle|fleet/i, sn = wb.SheetNames.find(n => want.test(n)) || wb.SheetNames[0];
+      const want = S.bulkKind === 'staff' ? /staff|crew|pilot|emt/i : S.bulkKind === 'places' ? /hosp|base|place/i : /amb|vehicle|fleet/i, sn = wb.SheetNames.find(n => want.test(n)) || wb.SheetNames[0];
       const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: false, defval: '' }).filter(r => r.some(c => String(c).trim()));
       $('bulkText').value = aoa.map(r => r.map(c => String(c).replace(/[\t\n]/g, ' ')).join('\t')).join('\n');
       $('bulkInfo').textContent = `Read sheet “${sn}” (${aoa.length - 1} rows).`;
@@ -944,7 +979,8 @@ $('tplBtn').addEventListener('click', () => {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Name', 'Role', 'Phone', 'Emp code', 'Active']]), 'Staff');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Reg no', 'Type', 'Base name', 'Base location', 'Default pilot', 'Default EMT', 'Default route', 'Active']]), 'Ambulances');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['How to fill'], ['Staff: Role is Pilot or EMT. Emp code is optional but best for matching.'], ['Ambulances: Type is BLS, ALS, PTV or FRV. Base location can be "28.4798, 77.0740" or a Google Maps link.'], ['Default pilot / EMT: the person\'s name, phone or emp code (add staff first).'], ['Default route: the exact route name from the app (optional).'], ['Active: Yes or No (blank = Yes).'], ['Upload this file in Ambulances & staff → Upload CSV / Excel. Do Staff first, then Ambulances.']]), 'Read me');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Name', 'Kind', 'Location', 'Address', 'Phone', 'Capabilities', 'Active']]), 'Hospitals & bases');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['How to fill'], ['Hospitals & bases: Kind is Hospital, Base, Standby or Other. Location is "28.4798, 77.0740" or a Google Maps link.'], ['Staff: Role is Pilot or EMT. Emp code is optional but best for matching.'], ['Ambulances: Type is BLS, ALS, PTV or FRV. Base location can be "28.4798, 77.0740" or a Google Maps link.'], ['Default pilot / EMT: the person\'s name, phone or emp code (add staff first).'], ['Default route: the exact route name from the app (optional).'], ['Active: Yes or No (blank = Yes).'], ['Upload this file in Ambulances & staff → Upload CSV / Excel. Do Staff first, then Ambulances.']]), 'Read me');
   XLSX.writeFile(wb, 'ambulance-planner-template.xlsx');
 });
 
@@ -1032,13 +1068,14 @@ $('exportBtn').addEventListener('click', () => {
 /* =========================================================
    Settings
    ========================================================= */
-$('orsKey').value = localKeys.ORS_API_KEY || ''; $('olaKey').value = localKeys.OLA_MAPS_API_KEY || '';
-[['orsKey', 'ORS_API_KEY'], ['olaKey', 'OLA_MAPS_API_KEY']].forEach(([id, k]) => $(id).addEventListener('change', e => { const v = e.target.value.trim(); if (v) localKeys[k] = v; else delete localKeys[k]; try { localStorage.setItem('ap-keys', JSON.stringify(localKeys)); } catch (er) {} if (S.route) { if (!engReady(S.route.data.engine) && firstEngine()) S.route.data.engine = firstEngine(); renderEngineSel(); queueLegs(); } renderSettings(); toast('Saved in this browser'); }));
+$('orsKey').value = localKeys.ORS_API_KEY || ''; $('olaKey').value = localKeys.OLA_MAPS_API_KEY || ''; $('ttKey').value = localKeys.TOMTOM_API_KEY || '';
+[['orsKey', 'ORS_API_KEY'], ['olaKey', 'OLA_MAPS_API_KEY'], ['ttKey', 'TOMTOM_API_KEY']].forEach(([id, k]) => $(id).addEventListener('change', e => { const v = e.target.value.trim(); if (v) localKeys[k] = v; else delete localKeys[k]; try { localStorage.setItem('ap-keys', JSON.stringify(localKeys)); } catch (er) {} if (S.route) { if (!engReady(S.route.data.engine) && firstEngine()) S.route.data.engine = firstEngine(); renderEngineSel(); queueLegs(); } renderSettings(); toast('Saved in this browser'); }));
 function renderSettings(results) {
   const R = results || {}, line = (name, ok, txt) => `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="chip ${ok === true ? 'ok' : ok === false ? 'bad' : ''}">${ok === true ? '✓' : ok === false ? '✗' : '–'}</span> <b>${name}</b> <span class="muted">${esc(txt)}</span></div>`;
   $('connOut').innerHTML =
     line('Database', DB.cloud ? (R.db ?? true) : null, DB.cloud ? (R.dbTxt || `Supabase · ${CFG.SUPABASE_URL}`) : 'Not connected: demo mode (this browser only). Add SUPABASE_URL and SUPABASE_ANON_KEY in config.js.') +
     line('openrouteservice (roads)', keyOf('ORS_API_KEY') ? (R.ors ?? true) : null, keyOf('ORS_API_KEY') ? (R.orsTxt || `key set${localKeys.ORS_API_KEY ? ' in this browser' : ' in config.js'}`) : 'No key. Get a free one at openrouteservice.org and put it in config.js.') +
+    line('TomTom (roads with traffic, free)', keyOf('TOMTOM_API_KEY') ? (R.tt ?? true) : null, keyOf('TOMTOM_API_KEY') ? (R.ttTxt || `key set${localKeys.TOMTOM_API_KEY ? ' in this browser' : ' in config.js'}`) : 'Optional. Free key at developer.tomtom.com (no card) adds drive times with usual traffic.') +
     line('Ola Maps (roads, optional)', keyOf('OLA_MAPS_API_KEY') ? (R.ola ?? true) : null, keyOf('OLA_MAPS_API_KEY') ? (R.olaTxt || `key set${localKeys.OLA_MAPS_API_KEY ? ' in this browser' : ' in config.js'}`) : 'Not set (optional).');
   renderAdmins();
   $('popInfo').textContent = S.grid ? `${S.grid.length.toLocaleString('en-IN')} points loaded · ${fmtInt(S.grid.reduce((t, p) => t + p[2], 0))} people` : 'No grid loaded.';
@@ -1048,6 +1085,7 @@ $('connTest').addEventListener('click', async () => {
   if (DB.cloud) { try { await DB.list('app_settings'); R.db = true; R.dbTxt = 'connected, tables found'; } catch (e) { R.db = false; R.dbTxt = e.message; } }
   const a = { lat: 28.479814, lng: 77.074042 }, b = { lat: 28.4595, lng: 77.0266 };
   if (keyOf('ORS_API_KEY')) { try { const l = await orsLegs([a, b]); R.ors = true; R.orsTxt = `working · test drive ${fmt(l[0].km)} km, ${fmt(l[0].min, 0)} min`; } catch (e) { R.ors = false; R.orsTxt = e.message; } }
+  if (keyOf('TOMTOM_API_KEY')) { try { const l = await tomtomLegs([a, b], nextWeekdayISO('09:00').iso); R.tt = !l[0].err; R.ttTxt = l[0].err ? l[0].err : `working · test drive ${fmt(l[0].km)} km, ${fmt(l[0].min, 0)} min at 09:00 on a weekday`; } catch (e) { R.tt = false; R.ttTxt = e.message; } }
   if (keyOf('OLA_MAPS_API_KEY')) { try { const l = await olaLeg(a, b); R.ola = true; R.olaTxt = `working · test drive ${fmt(l.km)} km, ${fmt(l.min, 0)} min`; } catch (e) { R.ola = false; R.olaTxt = e.message; } }
   renderSettings(R);
 });
@@ -1106,12 +1144,505 @@ $('adminList').addEventListener('click', async e => {
   if (!confirm(`Remove ${b.dataset.rm} from admins? They will no longer see any data.`)) return;
   await guard(() => DB.removeWhere('app_admins', 'email', b.dataset.rm), 'Removing…'); renderAdmins();
 });
+/* =========================================================
+   Base maps (both maps), layer toggles
+   ========================================================= */
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+const BASEMAPS = {
+  street: { name: 'Streets', layers: () => [L.tileLayer(ESRI + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors' })] },
+  sat: { name: 'Satellite with roads & names', layers: () => [L.tileLayer(ESRI + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' }), L.tileLayer(ESRI + 'Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: .9 }), L.tileLayer(ESRI + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })] },
+  grey: { name: 'Light grey (routes stand out)', layers: () => [L.tileLayer(ESRI + 'Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, maxNativeZoom: 16, attribution: 'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors' }), L.tileLayer(ESRI + 'Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 16 })] },
+  osm: { name: 'OpenStreetMap', layers: () => [L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' })] }
+};
+const baseOn = { r: [], l: [] };
+function setBase(k) {
+  if (!BASEMAPS[k]) k = 'street';
+  [['r', rmap], ['l', lmap]].forEach(([n, m]) => { baseOn[n].forEach(t => m.removeLayer(t)); baseOn[n] = BASEMAPS[k].layers(); baseOn[n].forEach(t => t.addTo(m).bringToBack()); });
+  $('baseSel').value = k; try { localStorage.setItem('ap-route-base', k); } catch (e) {}
+}
+$('baseSel').innerHTML = Object.entries(BASEMAPS).map(([k, b]) => opt(k, b.name)).join('');
+$('baseSel').addEventListener('change', e => setBase(e.target.value));
+{ let b = 'street'; try { b = localStorage.getItem('ap-route-base') || 'street'; } catch (e) {} setBase(b); }
+$('shCirc').addEventListener('change', e => { showCirc = e.target.checked; $('circBtn').classList.toggle('on', showCirc); drawRoute(); });
+$('shLabels').addEventListener('change', () => drawRoute());
+$('shPlaces').addEventListener('change', () => drawPlaces());
+
+/* =========================================================
+   Hover details
+   ========================================================= */
+function stopTip(r, sc, i) {
+  const d = r.data, x = sc.rows[i], s = x.s, nx = d.stops[i + 1], pv = i ? sc.rows[i - 1] : null, R = num(s.radius) || d.radius, nh = nearestPlace(s, 'Hospital');
+  const lg = x.leg && isFinite(x.leg.km) ? x.leg : null;
+  return `<div class="tip"><span class="tl">${esc(r.name || 'Route')} · stop ${i + 1} of ${d.stops.length}</span><br><b>${esc(s.name || 'Stop')}</b>
+    <br>Arrive <b>${min2hm(x.arr)}${x.arr != null ? dayTag(x.arr) : ''}</b>${x.arrOv ? ' (fixed)' : ''} · Halt <b>${x.halt != null ? Math.round(x.halt) : '–'} min</b> · Depart <b>${min2hm(x.dep)}</b>${x.depOv ? ' (fixed)' : ''}
+    ${i ? `<br><span class="tl">From ${esc(pv.s.name)}:</span> ${lg ? `${fmt(lg.km)} km · ${dur(x.travel)} at ${fmt(x.speed, 0)} km/h` : 'road route pending'}` : '<br><span class="tl">Start of route</span>'}
+    <br><span class="tl">Next:</span> ${nx ? esc(nx.name) : 'last stop'}
+    <br><span class="tl">Coverage:</span> ${fmt(R)} km radius${x.pop != null ? ` · population ${fmtInt(x.pop)}` : ''}
+    ${nh ? `<br><span class="tl">Nearest hospital:</span> ${esc(nh.p.name)} · ${fmt(nh.km)} km (straight line)` : ''}
+    ${s.remarks ? `<br><i>${esc(s.remarks)}</i>` : ''}</div>`;
+}
+function legTip(r, sc, i) {
+  const x = sc.rows[i], pv = sc.rows[i - 1], lg = x.leg;
+  return `<div class="tip"><span class="tl">${esc(r.name || 'Route')} · leg ${i} of ${sc.rows.length - 1}</span><br><b>${esc(pv.s.name)} → ${esc(x.s.name)}</b>
+    <br>${lg && isFinite(lg.km) ? `${fmt(lg.km)} km by road · ${dur(x.travel)} at ${fmt(x.speed, 0)} km/h` : 'Road route pending'}
+    <br>Depart ${min2hm(pv.dep)} → arrive ${min2hm(x.arr)}</div>`;
+}
+
+/* =========================================================
+   All routes / one ambulance on the map
+   ========================================================= */
+S.view = 'one'; S.viewAmb = null;
+function setView(v) {
+  if (v === 'amb' && !S.amb.length) { toast('Add ambulances first (Ambulances & staff).', true); v = 'one'; }
+  S.view = v; $('viewSel').value = v;
+  document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  $('viewAmb').style.display = v === 'amb' ? 'block' : 'none';
+  if (v === 'amb' && !S.viewAmb) { const a = S.amb.find(x => x.active) || S.amb[0]; S.viewAmb = a && a.id; $('viewAmb').value = S.viewAmb || ''; }
+  if (v !== 'one') { setAddMode(false); }
+  drawRoute(); fitMany();
+}
+function fillViewAmb() { $('viewAmb').innerHTML = S.amb.map(a => opt(a.id, `${a.reg_no}${a.active ? '' : ' (inactive)'}`, a.id === S.viewAmb)).join(''); }
+$('viewSel').addEventListener('change', e => setView(e.target.value));
+$('viewSeg').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) setView(b.dataset.v); });
+$('viewAmb').addEventListener('change', e => { S.viewAmb = e.target.value; drawRoute(); fitMany(); });
+const curOf = r => (S.route && S.route.id === r.id ? S.route : r);
+function manyItems() {
+  const items = [];
+  if (S.view === 'all') {
+    const list = S.routes.map(curOf); if (S.route && S.route._new && S.route.data.stops.length) list.push(S.route);
+    list.filter(r => r.data.stops.length).forEach(r => items.push({ r, start: null, label: '' }));
+  } else {
+    const a = ambById(S.viewAmb); if (!a) return items;
+    const byRoute = new Map();
+    S.deps.filter(x => x.ambulance_id === a.id && x.route_id && x.status !== 'Cancelled').sort((x, y) => x.dep_date.localeCompare(y.dep_date)).forEach(x => { if (!byRoute.has(x.route_id)) byRoute.set(x.route_id, []); byRoute.get(x.route_id).push(x); });
+    if (a.default_route && !byRoute.has(a.default_route)) byRoute.set(a.default_route, []);
+    byRoute.forEach((deps, id) => { const r = routeById(id); if (!r || !r.data.stops.length) return; const rr = curOf(r); items.push({ r: rr, start: deps.length ? hm2min(deps[0].start_time) : null, label: deps.length ? deps.map(x => niceDate(x.dep_date)).slice(0, 4).join(', ') + (deps.length > 4 ? ` +${deps.length - 4}` : '') : 'default route' }); });
+  }
+  return items;
+}
+function drawMany() {
+  const items = manyItems(), lg = $('mLegend'), all = [];
+  items.forEach((it, n) => {
+    const r = it.r, d = r.data, sc = schedule(r, it.start), col = COLORS[n % COLORS.length]; it.sc = sc; it.col = col;
+    d.stops.forEach((s, i) => {
+      if (i) {
+        const l = legOf(r, d.stops[i - 1], s);
+        if (l && l.geom && l.geom.length > 1) L.polyline(l.geom, { color: col, weight: 4, opacity: .85 }).bindTooltip(() => legTip(r, sc, i), { sticky: true }).addTo(rG.line);
+        else L.polyline([[d.stops[i - 1].lat, d.stops[i - 1].lng], [s.lat, s.lng]], { color: col, weight: 2, dashArray: '4 8', opacity: .8 }).bindTooltip(() => legTip(r, sc, i), { sticky: true }).addTo(rG.line);
+      }
+      const R = num(s.radius) || d.radius;
+      if (showCirc) L.circle([s.lat, s.lng], { radius: R * 1000, color: col, weight: 1, fillColor: col, fillOpacity: .07, interactive: false }).addTo(rG.circ);
+      L.marker([s.lat, s.lng], { icon: L.divIcon({ className: 'mk', iconSize: [20, 20], iconAnchor: [10, 10], html: `<div class="sdot" style="background:${col}">${i + 1}</div>` }) }).bindTooltip(() => stopTip(r, sc, i), { direction: 'top', offset: [0, -10] }).on('click', () => openRouteFromMap(r)).addTo(rG.pins);
+      if ($('shLabels').checked) L.marker([s.lat, s.lng], { interactive: false, keyboard: false, icon: L.divIcon({ className: 'mk', iconSize: [0, 0], html: `<span class="slabel">${esc(`${s.name} · ${min2hm(sc.rows[i].arr)}`)}</span>` }) }).addTo(rG.pins);
+      all.push({ lat: s.lat, lng: s.lng, radius: R, pop: sc.rows[i].pop, pop_src: 'Manual', rt: n });
+    });
+  });
+  let amb = null;
+  if (S.view === 'amb') { amb = ambById(S.viewAmb); if (amb && amb.base_lat != null) L.marker([amb.base_lat, amb.base_lng], { icon: L.divIcon({ className: 'mk', iconSize: [24, 24], iconAnchor: [12, 12], html: '<div class="plk Base">B</div>' }) }).bindTooltip(`<b>${esc(amb.reg_no)} base</b><br>${esc(amb.base_name || '')}`).addTo(rG.pins); }
+  if (!items.length) { lg.innerHTML = `<b>${S.view === 'amb' ? (amb ? esc(amb.reg_no) : 'No ambulance') : 'All routes'}</b><p class="note" style="margin:4px 0 0">${S.view === 'amb' ? 'No default route and no deployments loaded for this ambulance. Set a default route in Ambulances & staff, or open the roster week that has its deployments.' : 'No saved routes yet.'}</p>`; lg.classList.add('show'); return; }
+  // union coverage, unique population, overlaps between different routes
+  const cov = popCoverage({ data: { stops: all, radius: 0 } }, all.map(s => ({ pop: s.pop })));
+  const cross = cov.overlaps.filter(([a, b]) => all[a].rt !== all[b].rt).length;
+  const T = items.reduce((t, it) => { const x = it.sc.tot; t.km += x.km; t.stops += x.stops; t.drive += x.drive; t.halt += x.halt; return t; }, { km: 0, stops: 0, drive: 0, halt: 0 });
+  lg.innerHTML = `<b>${S.view === 'amb' ? `${esc(amb.reg_no)} · ${esc(amb.type || '')}${amb.base_name ? ` · base ${esc(amb.base_name)}` : ''}` : `All routes (${items.length})`}</b>
+    <table><thead><tr><th></th><th>Route</th><th class="n">Stops</th><th class="n">Km</th><th>Time</th><th class="n">Population</th></tr></thead><tbody>
+    ${items.map((it, n) => { const t = it.sc.tot; return `<tr class="rt" data-r="${esc(it.r.id)}" title="Open this route"><td><span class="sw" style="background:${it.col}"></span></td><td class="nm">${esc(it.r.name || 'New route')}${it.label ? `<br><span class="hint">${esc(it.label)}</span>` : ''}</td><td class="n">${t.stops}</td><td class="n">${fmt(t.km)}${t.incomplete ? '*' : ''}</td><td>${min2hm(t.start)}–${min2hm(t.end)}</td><td class="n">${t.pop_best != null ? fmtInt(t.pop_best) : '–'}</td></tr>`; }).join('')}
+    </tbody></table>
+    <div class="note" style="margin:6px 0 0">${T.stops} stops · ${fmt(T.km)} km by road · driving ${dur(T.drive)} · halts ${dur(T.halt)}<br>Area covered ${fmt(cov.area, 0)} km² · population ${cov.pop_unique != null ? `${fmtInt(cov.pop_unique)} unique (grid)` : cov.pop_sum != null ? `${fmtInt(cov.pop_sum)} (sum of stops)` : '–'}${cross ? `<br><span class="warn">${cross} stop pair${cross > 1 ? 's' : ''} from different routes overlap</span>` : ''}${items.some(it => it.sc.tot.incomplete) ? '<br>* some legs not measured yet: open that route to measure roads' : ''}<br>Hover a stop or road for times; click a route to edit it.</div>`;
+  lg.classList.add('show');
+}
+function fitMany() {
+  if (S.view === 'one') { fitRoute(); return; }
+  const pts = manyItems().flatMap(it => it.r.data.stops.map(s => [s.lat, s.lng]));
+  if (pts.length) rmap.fitBounds(L.latLngBounds(pts).pad(0.15), { maxZoom: 14 });
+}
+function openRouteFromMap(r) {
+  const saved = routeById(r.id);
+  if (S.route && S.route.id !== r.id) { if (S.dirty && !confirm('Discard unsaved changes to this route?')) return; if (saved) setRoute(saved); }
+  setView('one');
+}
+$('mLegend').addEventListener('click', e => { const tr = e.target.closest('[data-r]'); if (!tr) return; const r = routeById(tr.dataset.r) || (S.route && S.route.id === tr.dataset.r ? S.route : null); if (r) openRouteFromMap(r); });
+
+/* =========================================================
+   Hospitals & bases
+   ========================================================= */
+const PLACE_KEYS = ['id', 'name', 'kind', 'lat', 'lng', 'address', 'phone', 'capabilities', 'notes', 'active'];
+const KINDS = ['Hospital', 'Base', 'Standby', 'Other'], KIND_TXT = { Hospital: 'Hospital', Base: 'Ambulance base / station', Standby: 'Standby point', Other: 'Other' };
+S.places = S.places || [];
+const pG = { r: L.layerGroup().addTo(rmap), l: L.layerGroup().addTo(lmap) };
+const placeIcon = k => L.divIcon({ className: 'mk', iconSize: [24, 24], iconAnchor: [12, 12], html: `<div class="plk ${esc(k)}">${({ Hospital: 'H', Base: 'B', Standby: 'S' })[k] || '•'}</div>` });
+const placeTip = p => `<div class="tip"><b>${esc(p.name)}</b><br><span class="tl">${esc(KIND_TXT[p.kind] || p.kind)}</span>${p.address ? `<br>${esc(p.address)}` : ''}${p.phone ? `<br>☎ ${esc(p.phone)}` : ''}${p.capabilities ? `<br>${esc(p.capabilities)}` : ''}</div>`;
+let placeMode = false;
+function setPlaceMode(on) {
+  if (on && S.placesErr) { toast('Run setup.sql again in Supabase → SQL Editor to enable hospitals & bases.', true); return; }
+  placeMode = on; $('placeMode').classList.toggle('on', on); if (on) setAddMode(false);
+  rmap.getContainer().style.cursor = on || addMode ? 'crosshair' : ''; setStat(on ? 'Click the map where the hospital or base is · Esc to cancel' : addMode ? 'Click the map to add stops · Esc to stop' : '');
+}
+$('placeMode').addEventListener('click', () => setPlaceMode(!placeMode));
+$('addMode').addEventListener('click', () => { if (addMode && placeMode) setPlaceMode(false); if (addMode && S.view !== 'one') setView('one'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && placeMode && !$('modal').classList.contains('show')) setPlaceMode(false); });
+function nearestPlace(pt, kind) {
+  let best = null;
+  (S.places || []).forEach(p => { if (p.active === false || (kind && p.kind !== kind)) return; const km = haversine([pt.lat, pt.lng], [p.lat, p.lng]); if (!best || km < best.km) best = { p, km }; });
+  return best;
+}
+function drawPlaces() {
+  pG.r.clearLayers(); pG.l.clearLayers();
+  if (!$('shPlaces').checked) return;
+  (S.places || []).filter(p => p.active !== false && isFinite(p.lat) && isFinite(p.lng)).forEach(p => {
+    const m = L.marker([p.lat, p.lng], { icon: placeIcon(p.kind), zIndexOffset: 300 }).bindTooltip(placeTip(p), { direction: 'top', offset: [0, -12] })
+      .bindPopup(`<b>${esc(p.name)}</b><div class="row" style="margin-top:6px;gap:6px"><button class="btn sm" data-pa="add">Add as stop</button><button class="btn sm" data-pa="first">Set as stop 1</button><button class="btn sm" data-pa="edit">Edit</button></div>`);
+    m.on('popupopen', ev => {
+      ev.popup.getElement().querySelectorAll('[data-pa]').forEach(b => { b.onclick = () => {
+        rmap.closePopup(); const a = b.dataset.pa;
+        if (a === 'edit') { openPlace(p); return; }
+        if (S.view !== 'one') setView('one');
+        if (!S.route) return;
+        const s = addStop(p.lat, p.lng, p.name, a === 'first' ? 0 : null); if (a === 'first') { s.halt = 0; renderRoute(); }
+        toast(`${p.name} added as stop ${a === 'first' ? 1 : S.route.data.stops.length}`);
+      }; });
+    });
+    m.addTo(pG.r);
+    L.marker([p.lat, p.lng], { icon: placeIcon(p.kind), zIndexOffset: 100 }).bindTooltip(placeTip(p), { direction: 'top', offset: [0, -12] }).addTo(pG.l);
+  });
+}
+function openPlace(p, at) {
+  if (S.placesErr) { toast('Run setup.sql again in Supabase → SQL Editor to enable hospitals & bases.', true); return; }
+  const x = p ? { ...p } : { id: DB.uuid(), name: '', kind: 'Hospital', lat: at ? +at.lat.toFixed(6) : null, lng: at ? +at.lng.toFixed(6) : null, address: '', phone: '', capabilities: '', notes: '', active: true };
+  openModal(`<h2>${p ? 'Edit' : 'Add'} hospital / base</h2>
+    <div class="grid2">
+      <label class="f">Name<input type="text" id="plName" value="${esc(x.name || '')}" maxlength="100" placeholder="e.g. PB Health Hospital"></label>
+      <label class="f">Kind<select id="plKind">${KINDS.map(k => opt(k, KIND_TXT[k], x.kind === k)).join('')}</select></label>
+      <label class="f" style="grid-column:1/-1">Location (lat, lng or Google Maps link)<input type="text" id="plLL" value="${x.lat != null ? `${x.lat}, ${x.lng}` : ''}" placeholder="28.479814, 77.074042"></label>
+      <label class="f" style="grid-column:1/-1">Address<input type="text" id="plAddr" value="${esc(x.address || '')}" maxlength="200"></label>
+      <label class="f">Phone<input type="tel" id="plPhone" value="${esc(x.phone || '')}" maxlength="40"></label>
+      <label class="f">Capabilities<input type="text" id="plCap" value="${esc(x.capabilities || '')}" maxlength="200" placeholder="e.g. Cath lab, Stroke, Trauma, NICU"></label>
+      <label class="f" style="grid-column:1/-1">Notes<input type="text" id="plNotes" value="${esc(x.notes || '')}" maxlength="300"></label>
+    </div>
+    <label class="hint"><input type="checkbox" id="plActive"${x.active !== false ? ' checked' : ''}> Active (shown on maps and lists)</label>
+    <p class="note">Capabilities with the words Cath, Stroke, Trauma or NICU are also picked up by the Radius coverage module.</p>
+    <div class="row" style="margin-top:10px"><button class="btn primary" id="plSave">Save</button>${p ? '<button class="btn" id="plDel">Delete</button>' : ''}<button class="btn" id="plCancel">Cancel</button></div>`);
+  $('plCancel').onclick = closeModal;
+  if (!p && at) {
+    httpJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${x.lat}&lon=${x.lng}&zoom=17&accept-language=en`, {}, 'Place names').then(j => {
+      if (!j || !$('plAddr')) return; if (!$('plAddr').value) $('plAddr').value = String(j.display_name || '').split(', ').slice(0, 4).join(', ');
+      if (!$('plName').value && j.name) $('plName').value = String(j.name).slice(0, 100);
+    }).catch(() => {});
+  }
+  $('plSave').onclick = async () => {
+    const name = $('plName').value.trim(), ll = parseLatLng($('plLL').value);
+    if (!name) { toast('Enter a name.', true); return; }
+    if (!ll) { toast('Location must be “lat, lng” or a Google Maps link.', true); return; }
+    Object.assign(x, { name, kind: $('plKind').value, lat: +ll.lat.toFixed(6), lng: +ll.lng.toFixed(6), address: $('plAddr').value.trim() || null, phone: $('plPhone').value.trim() || null, capabilities: $('plCap').value.trim() || null, notes: $('plNotes').value.trim() || null, active: $('plActive').checked });
+    const r = await guard(() => saveOne('places', x, PLACE_KEYS));
+    if (r) { closeModal(); setPlaceMode(false); renderPlaces(); renderMasters(); toast(`${r.name} saved`); }
+  };
+  if (p) $('plDel').onclick = () => delPlace(p);
+}
+async function delPlace(p) {
+  if (!confirm(`Delete ${p.name}? Ambulances keep their base name and location.`)) return;
+  await guard(async () => { await DB.remove('places', p.id); S.places = S.places.filter(q => q.id !== p.id); cacheMaster(); drawPlaces(); closeModal(); renderPlaces(); renderMasters(); toast('Deleted'); }, 'Deleting…');
+}
+function renderPlaces() {
+  const f = ($('placeFind').value || '').toLowerCase(), list = (S.places || []).filter(p => !f || JSON.stringify([p.name, p.kind, p.address, p.capabilities]).toLowerCase().includes(f));
+  $('placeAside').textContent = S.placesErr ? 'needs database update' : KINDS.map(k => [k, S.places.filter(p => p.kind === k && p.active !== false).length]).filter(x => x[1]).map(([k, n]) => `${n} ${k === 'Base' ? 'base' : k.toLowerCase()}${n > 1 ? 's' : ''}`).join(' · ') || 'none yet';
+  if (S.placesErr) { $('placeTable').innerHTML = `<p class="note" style="padding:12px"><span class="err">The database has no “places” table yet.</span> Open Supabase → SQL Editor, paste the new setup.sql and press Run. It is safe to run again; nothing is deleted.</p>`; return; }
+  $('placeTable').innerHTML = list.length ? `<table class="t"><thead><tr><th>Name</th><th>Kind</th><th>Lat, lng</th><th>Address</th><th>Phone</th><th>Capabilities</th><th>Active</th><th></th></tr></thead><tbody>${list.map(p => `<tr data-id="${esc(p.id)}"><td><input type="text" data-f="name" value="${esc(p.name)}" style="min-width:150px"></td><td><select data-f="kind">${KINDS.map(k => opt(k, k, p.kind === k)).join('')}</select></td><td><input type="text" data-f="ll" value="${p.lat}, ${p.lng}" style="min-width:150px"></td><td><input type="text" data-f="address" value="${esc(p.address || '')}" style="min-width:150px"></td><td><input type="tel" data-f="phone" value="${esc(p.phone || '')}" style="min-width:100px"></td><td><input type="text" data-f="capabilities" value="${esc(p.capabilities || '')}" style="min-width:140px"></td><td><input type="checkbox" data-f="active"${p.active !== false ? ' checked' : ''}></td><td style="white-space:nowrap"><button class="ico" data-show title="Show on map">◎</button><button class="ico" data-del title="Delete">✕</button></td></tr>`).join('')}</tbody></table>` : '<p class="note" style="padding:12px">No hospitals or bases yet. Press Add one, Add on map, or paste a list in Bulk import (choose “Hospitals &amp; bases”).</p>';
+}
+$('placeFind').addEventListener('input', renderPlaces);
+$('placeAdd').addEventListener('click', () => openPlace(null, null));
+$('placeMapAdd').addEventListener('click', () => { showTab('routes'); setPlaceMode(true); setTimeout(() => rmap.invalidateSize(), 50); });
+$('placeTable').addEventListener('change', async e => {
+  const tr = e.target.closest('[data-id]'), p = tr && S.places.find(q => q.id === tr.dataset.id), f = e.target.dataset.f; if (!p || !f) return;
+  const x = { ...p }, v = e.target.type === 'checkbox' ? e.target.checked : e.target.value.trim();
+  if (f === 'll') { const ll = parseLatLng(v); if (!ll) { toast('Use “lat, lng” or a Google Maps link.', true); renderPlaces(); return; } x.lat = +ll.lat.toFixed(6); x.lng = +ll.lng.toFixed(6); }
+  else if (f === 'name' && !v) { renderPlaces(); return; }
+  else x[f] = v === '' ? null : v;
+  const r = await guard(() => saveOne('places', x, PLACE_KEYS)); renderPlaces(); renderMasters(); if (r) toast(`${r.name} saved`);
+});
+$('placeTable').addEventListener('click', e => {
+  const tr = e.target.closest('[data-id]'), p = tr && S.places.find(q => q.id === tr.dataset.id); if (!p) return;
+  if (e.target.closest('[data-del]')) delPlace(p);
+  else if (e.target.closest('[data-show]')) { showTab('routes'); setTimeout(() => { rmap.invalidateSize(); rmap.setView([p.lat, p.lng], 15); }, 60); }
+});
+HDR.places = { name: /^(name|hospital|hospital name|base|base name|place|place name)$/, kind: /^(kind|type|category)$/, ll: /^(location|lat, ?lng|coordinates|maps link|google maps link)$/, lat: /^(lat|latitude)$/, lng: /^(lng|lon|long|longitude)$/, address: /^(address|area)$/, phone: /^(phone|contact|mobile|phone no|contact no)$/, capabilities: /^(capabilities|facilities|services|speciality|specialities)$/, notes: /^(notes|remarks)$/, active: /^(active|status)$/ };
+const kindOf = v => { const t = String(v || '').toLowerCase(); return !t ? null : /hosp|medical|clinic|centre|center|chc|phc/.test(t) ? 'Hospital' : /base|station|depot|garage/.test(t) ? 'Base' : /stand ?by|parking|point|hold/.test(t) ? 'Standby' : 'Other'; };
+const normHead = h => String(h || '').toLowerCase().replace(/\(.*?\)/g, ' ').replace(/[^a-z0-9, #]/g, ' ').replace(/\s+/g, ' ').trim();
+function bulkCheckPlaces() {
+  const rows = splitRows($('bulkText').value); if (rows.length < 2) { $('bulkInfo').textContent = 'Paste a header row and at least one data row.'; return; }
+  if (S.placesErr) { $('bulkInfo').innerHTML = '<span class="err">Run setup.sql again in Supabase first (adds the hospitals & bases table).</span>'; return; }
+  const head = rows[0].map(normHead), col = {};
+  Object.entries(HDR.places).forEach(([k, re]) => { const i = head.findIndex(h => re.test(h)); if (i >= 0) col[k] = i; });
+  if (col.name == null) { $('bulkInfo').innerHTML = `<span class="err">Header row needs a Name column.</span> Found: ${esc(rows[0].join(' | '))}`; $('bulkGo').disabled = true; return; }
+  const g = (r, k) => col[k] != null ? String(r[col[k]] ?? '').trim() : undefined, out = [], seen = new Set();
+  rows.slice(1).forEach((r, n) => {
+    const msgs = [], name = g(r, 'name');
+    if (!name) { out.push({ n: n + 2, act: 'Skip', msgs: ['Name missing'], show: r }); return; }
+    if (seen.has(name.toLowerCase())) { out.push({ n: n + 2, act: 'Skip', msgs: ['Repeated in this paste'], show: r }); return; } seen.add(name.toLowerCase());
+    const ex = S.places.find(p => p.name.toLowerCase() === name.toLowerCase());
+    let ll = null; if (col.ll != null && g(r, 'll')) ll = parseLatLng(g(r, 'll')); else if (col.lat != null && col.lng != null && g(r, 'lat')) ll = parseLatLng(`${g(r, 'lat')}, ${g(r, 'lng')}`);
+    if (!ll && !ex) { out.push({ n: n + 2, act: 'Skip', msgs: ['Location missing or not understood (use “lat, lng” or a Google Maps link)'], show: r }); return; }
+    if (!ll && ((col.ll != null && g(r, 'll')) || (col.lat != null && g(r, 'lat')))) msgs.push('Location not understood: kept the old one');
+    const rec = { ...(ex || { id: DB.uuid(), active: true, kind: 'Hospital', address: null, phone: null, capabilities: null, notes: null }), name };
+    const kv = g(r, 'kind'); if (kv) { rec.kind = kindOf(kv); if (rec.kind === 'Other' && !/other/i.test(kv)) msgs.push(`Kind “${kv}” read as Other`); }
+    if (ll) { rec.lat = +ll.lat.toFixed(6); rec.lng = +ll.lng.toFixed(6); }
+    ['address', 'phone', 'capabilities', 'notes'].forEach(k => { const v = g(r, k); if (v !== undefined) rec[k] = v || null; });
+    if (col.active != null) rec.active = isActive(g(r, 'active'));
+    out.push({ n: n + 2, act: ex ? 'Update' : 'New', msgs, rec, show: [rec.name, rec.kind, `${rec.lat}, ${rec.lng}`, rec.address || '', rec.phone || ''] });
+  });
+  S.bulk = { kind: 'places', rows: out };
+  const ok = out.filter(x => x.rec), nNew = ok.filter(x => x.act === 'New').length, nUp = ok.length - nNew, nSkip = out.length - ok.length;
+  $('bulkInfo').innerHTML = `${nNew} new · ${nUp} update · ${nSkip ? `<span class="err">${nSkip} skipped</span>` : '0 skipped'}`;
+  $('bulkGo').disabled = !ok.length;
+  const hd = ['Name', 'Kind', 'Lat, lng', 'Address', 'Phone'];
+  $('bulkPrev').innerHTML = `<table class="t"><thead><tr><th>Row</th><th>Action</th>${hd.map(h => `<th>${h}</th>`).join('')}<th>Notes</th></tr></thead><tbody>${out.map(x => `<tr><td>${x.n}</td><td class="${x.act === 'Skip' ? 'err' : x.act === 'New' ? 'good' : ''}">${x.act}</td>${hd.map((_, i) => `<td>${esc((x.show || [])[i] ?? '')}</td>`).join('')}<td class="${x.msgs.length ? 'warn' : ''}">${esc(x.msgs.join('; '))}</td></tr>`).join('')}</tbody></table>`;
+}
+
+/* =========================================================
+   Route import / export (Excel template)
+   ========================================================= */
+const RT_HEAD = ['Route name', 'Start time', 'Planned speed (km/h)', 'Default halt (min)', 'Coverage radius (km)', 'Road routing', 'Travel time from'];
+const ST_HEAD = ['Route name', 'Stop no', 'Location name', 'Location (lat, lng / Maps link / place name)', 'Halt (min)', 'Speed to here (km/h)', 'Fixed arrival', 'Fixed departure', 'Population', 'Population source', 'Population updated', 'Coverage radius (km)', 'Remarks'];
+const RT_HDR = { name: /^(route|route name|name)$/, start: /^(start|start time)$/, speed: /^(planned speed|speed|avg speed|planned avg speed)$/, halt: /^(default halt|halt)$/, radius: /^(coverage radius|radius)$/, engine: /^(road routing|engine|routing)$/, time_src: /^(travel time from|time source)$/ };
+const ST_HDR = { route: /^(route|route name)$/, no: /^(stop no|stop|#|no|sequence|seq|order|stop number)$/, name: /^(location name|stop name|name|place|place name)$/, ll: /^(location|lat, ?lng|coordinates|maps link|google maps link)$/, lat: /^(lat|latitude)$/, lng: /^(lng|lon|long|longitude)$/, halt: /^(halt|halt time)$/, speed: /^(speed to here|speed)$/, arr_ov: /^(fixed arrival|arrival|arrival time)$/, dep_ov: /^(fixed departure|departure|departure time)$/, pop: /^(population)$/, pop_src: /^(population source)$/, pop_date: /^(population updated|population date)$/, radius: /^(coverage radius|radius)$/, remarks: /^(remarks|notes|instructions)$/ };
+const engineOf = v => { const t = String(v || '').toLowerCase(); return /tom/.test(t) ? 'tomtom' : /ola/.test(t) ? 'ola' : /ors|openroute|free|road/.test(t) ? 'ors' : null; };
+const engineLabel = e => ({ ors: 'openrouteservice', tomtom: 'TomTom (traffic)', ola: 'Ola Maps' })[e] || e;
+function toHM(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' && v >= 0 && v < 1) { const m = Math.round(v * 1440); return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; }
+  const m = /^(\d{1,2})[:.](\d{2})(?::\d{2})?\s*(am|pm)?$/i.exec(String(v).trim()); if (!m) return undefined;
+  let h = +m[1]; const mi = +m[2], ap = (m[3] || '').toLowerCase(); if (ap === 'pm' && h < 12) h += 12; if (ap === 'am' && h === 12) h = 0;
+  return h < 24 && mi < 60 ? `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}` : undefined;
+}
+const isoDate = v => { const s = String(v || '').trim(); if (!s) return null; let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s); if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`; m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/.exec(s); if (m) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; return null; };
+function sheetRows(wb, re, avoid) { const n = wb.SheetNames.find(x => re.test(x) && !(avoid && avoid.test(x))); return n ? XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }).filter(r => r.some(c => String(c).trim())) : null; }
+function colsOf(head, map) { const h = head.map(normHead), c = {}; Object.entries(map).forEach(([k, re]) => { const i = h.findIndex(x => re.test(x)); if (i >= 0) c[k] = i; }); return c; }
+function routesBook(routes, example) {
+  const wb = XLSX.utils.book_new(), R = [RT_HEAD], St = [ST_HEAD.concat(example ? [] : ['Arrive (calculated)', 'Depart (calculated)', 'Road km from previous'])];
+  if (example) {
+    R.push(['Example – Sohna Road loop', '08:00', 30, 30, 2, 'openrouteservice', 'Planned speed']);
+    St.push(['Example – Sohna Road loop', 1, 'PB Health Hospital (base)', '28.479814, 77.074042', 0, '', '', '', '', '', '', '', 'Start from hospital']);
+    St.push(['Example – Sohna Road loop', 2, 'Subhash Chowk', '28.4302, 77.0400', 45, '', '', '', 12000, 'External', '', '', '']);
+    St.push(['Example – Sohna Road loop', 3, 'Badshahpur', 'Badshahpur, Gurugram', 60, '', '10:30', '', '', '', '', 3, 'Market area, park near police post']);
+  } else routes.forEach(r => {
+    const d = r.data, sc = schedule(r);
+    R.push([r.name, d.start_time, d.speed, d.halt, d.radius, engineLabel(d.engine), d.time_src === 'engine' ? 'Routing engine estimate' : 'Planned speed']);
+    sc.rows.forEach((x, i) => { const s = x.s; St.push([r.name, i + 1, s.name, `${s.lat}, ${s.lng}`, s.halt ?? '', s.speed ?? '', s.arr_ov || '', s.dep_ov || '', s.pop_src === 'Grid' ? '' : (s.pop ?? ''), s.pop_src || 'Manual', s.pop_date || '', s.radius ?? '', s.remarks || '', min2hm(x.arr), min2hm(x.dep), x.leg && isFinite(x.leg.km) ? +x.leg.km.toFixed(2) : '']); });
+  });
+  const ws1 = XLSX.utils.aoa_to_sheet(R), ws2 = XLSX.utils.aoa_to_sheet(St);
+  ws1['!cols'] = RT_HEAD.map(h => ({ wch: Math.max(14, h.length + 2) })); ws2['!cols'] = St[0].map((h, i) => ({ wch: i === 3 ? 34 : Math.max(10, h.length + 2) }));
+  XLSX.utils.book_append_sheet(wb, ws1, 'Routes'); XLSX.utils.book_append_sheet(wb, ws2, 'Stops');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['How to fill the route template'],
+    ['Routes sheet: one row per route. Only Route name is required; blank cells use the defaults (start 08:00, 30 km/h, 30 min halt, 2 km radius).'],
+    ['Stops sheet: one row per stop. Route name must match the Routes sheet. Stop no sets the order (1, 2, 3…).'],
+    ['Location: "28.4798, 77.0740", a Google Maps link, or a place name (place names are looked up online; check them on the map after import).'],
+    ['Halt and Speed to here: leave blank to use the route default. Fixed arrival / departure: optional exact times like 10:30.'],
+    ['Population source: Manual, External or Grid. Population updated: a date like 2026-11-01.'],
+    ['Road routing: openrouteservice (free roads) or TomTom (traffic). Travel time from: Planned speed or Routing engine estimate.'],
+    ['Importing a route with the same name REPLACES its stops. Columns marked "calculated" are ignored on import.'],
+    ['Upload in Route planner → Import routes (Excel template).']]), 'Read me');
+  return wb;
+}
+$('expRoutes').addEventListener('click', () => { const list = S.routes.map(curOf); if (!list.length) { toast('No saved routes yet.', true); return; } XLSX.writeFile(routesBook(list), `routes-${todayIST()}.xlsx`); });
+$('impBtn').addEventListener('click', () => {
+  openModal(`<h2>Import routes from Excel</h2>
+    <ol class="note" style="margin:0 0 10px 18px;padding:0"><li>Download the template (or download your current routes to edit them).</li><li>Fill the <b>Routes</b> and <b>Stops</b> sheets. The <b>Read me</b> sheet explains each column.</li><li>Upload it here, check the preview, then press Import. Road distances are measured for each route automatically.</li></ol>
+    <div class="row"><button class="btn sm" id="imTpl"><svg class="i"><use href="#i-save"/></svg>Download template</button><button class="btn sm" id="imCur">Download current routes</button><label class="btn sm primary" style="cursor:pointer"><svg class="i"><use href="#i-open"/></svg>Upload filled file<input type="file" id="imFile" accept=".xlsx,.xls,.csv" hidden></label></div>
+    <div id="imPrev" style="margin-top:10px"></div>
+    <div class="row" style="margin-top:10px"><button class="btn primary" id="imGo" disabled>Import</button><button class="btn" id="imCancel">Cancel</button></div>`, true);
+  $('imCancel').onclick = closeModal;
+  $('imTpl').onclick = () => XLSX.writeFile(routesBook([], true), 'route-import-template.xlsx');
+  $('imCur').onclick = () => $('expRoutes').click();
+  $('imFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await imParse(XLSX.read(await f.arrayBuffer(), { type: 'array' })); } catch (err) { console.error(err); toast(`Couldn’t read ${f.name}: ${err.message}`, true); } };
+});
+let IMP = null;
+async function imParse(wb) {
+  const rr = sheetRows(wb, /route/i, /stop/i), sr = sheetRows(wb, /stop/i) || (wb.SheetNames.length === 1 ? sheetRows(wb, /./) : null);
+  if (!sr || sr.length < 2) { $('imPrev').innerHTML = '<p class="err">No “Stops” sheet with data found. Use the template.</p>'; return; }
+  const settings = new Map(), warn = [];
+  if (rr && rr.length > 1) {
+    const c = colsOf(rr[0], RT_HDR);
+    if (c.name == null) warn.push('Routes sheet has no “Route name” column: its settings were ignored.');
+    else rr.slice(1).forEach((r, n) => {
+      const g = k => c[k] != null ? String(r[c[k]] ?? '').trim() : '', name = g('name'); if (!name) return;
+      const o = {}, st = toHM(g('start')); if (st) o.start_time = st; else if (g('start')) warn.push(`Routes row ${n + 2}: start time “${g('start')}” not understood`);
+      [['speed', 'speed'], ['halt', 'halt'], ['radius', 'radius']].forEach(([k, f]) => { const v = num(g(k)); if (v != null) o[f] = v; });
+      const en = engineOf(g('engine')); if (en) o.engine = en; if (g('time_src')) o.time_src = /engine|estimate/i.test(g('time_src')) ? 'engine' : 'speed';
+      settings.set(name.toLowerCase(), { name, o });
+    });
+  }
+  const c = colsOf(sr[0], ST_HDR);
+  const miss = ['route'].filter(k => c[k] == null).concat(c.ll == null && (c.lat == null || c.lng == null) ? ['location'] : []);
+  if (miss.length) { $('imPrev').innerHTML = `<p class="err">Stops sheet needs a ${miss.join(' and ')} column. Found: ${esc(sr[0].join(' | '))}</p>`; return; }
+  const groups = new Map();
+  sr.slice(1).forEach((r, n) => {
+    const g = k => c[k] != null ? String(r[c[k]] ?? '').trim() : '', rn = g('route'); if (!rn) { if (r.some(x => String(x).trim())) warn.push(`Stops row ${n + 2}: no route name, skipped`); return; }
+    const key = rn.toLowerCase(); if (!groups.has(key)) groups.set(key, { name: settings.has(key) ? settings.get(key).name : rn, rows: [] });
+    let ll = null, q = '';
+    if (c.ll != null && g('ll')) { ll = parseLatLng(g('ll')); if (!ll) q = g('ll'); } else if (c.lat != null && g('lat')) ll = parseLatLng(`${g('lat')}, ${g('lng')}`);
+    if (!ll && !q) { warn.push(`Stops row ${n + 2} (${rn}): no location, skipped`); return; }
+    const s = { id: DB.uuid(), name: (g('name') || q || '').slice(0, 80), lat: ll ? +ll.lat.toFixed(6) : null, lng: ll ? +ll.lng.toFixed(6) : null, q, pop: null, pop_src: 'Manual', pop_date: null, radius: null, halt: null, speed: null, arr_ov: null, dep_ov: null, remarks: g('remarks').slice(0, 300), _no: num(g('no')), _row: n + 2 };
+    ['halt', 'speed', 'pop', 'radius'].forEach(k => { const v = num(g(k)); if (v != null && v >= 0) s[k] = v; });
+    ['arr_ov', 'dep_ov'].forEach(k => { const v = toHM(g(k)); if (v) s[k] = v; else if (g(k)) warn.push(`Stops row ${n + 2}: time “${g(k)}” not understood`); });
+    if (g('pop_src')) s.pop_src = /grid/i.test(g('pop_src')) ? 'Grid' : /ext/i.test(g('pop_src')) ? 'External' : 'Manual';
+    s.pop_date = isoDate(g('pop_date'));
+    groups.get(key).rows.push(s);
+  });
+  groups.forEach(gp => gp.rows.sort((a, b) => (a._no ?? 1e9) - (b._no ?? 1e9) || a._row - b._row));
+  const lookups = [...groups.values()].reduce((t, gp) => t + gp.rows.filter(s => s.q).length, 0);
+  IMP = { groups, settings, warn };
+  const ex = gp => S.routes.find(r => r.name.toLowerCase() === gp.name.toLowerCase());
+  $('imPrev').innerHTML = `<div class="tw"><table class="t"><thead><tr><th>Route</th><th>Action</th><th>Stops</th><th>Place names to look up</th></tr></thead><tbody>${[...groups.values()].map(gp => `<tr><td>${esc(gp.name)}</td><td class="${ex(gp) ? 'warn' : 'good'}">${ex(gp) ? 'Replace stops' : 'New'}</td><td>${gp.rows.length}${gp.rows.length < 2 ? ' <span class="err">(needs 2+)</span>' : ''}</td><td>${gp.rows.filter(s => s.q).length || '–'}</td></tr>`).join('')}</tbody></table></div>
+    ${warn.length ? `<p class="note warn">${warn.slice(0, 12).map(esc).join('<br>')}${warn.length > 12 ? `<br>…and ${warn.length - 12} more` : ''}</p>` : ''}
+    ${lookups ? `<p class="note">${lookups} place name${lookups > 1 ? 's' : ''} will be looked up online (about 1 per second). Check their pins after import.</p>` : ''}`;
+  $('imGo').disabled = ![...groups.values()].some(gp => gp.rows.length >= 2);
+  $('imGo').onclick = imRun;
+}
+async function geocodeOne(q) {
+  const j = await httpJSON(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=in&accept-language=en&viewbox=76.6,28.9,77.6,28.1&q=${encodeURIComponent(q)}`, {}, 'Place search');
+  return j && j[0] ? { lat: +j[0].lat, lng: +j[0].lon } : null;
+}
+async function measureRoute(r) {
+  const d = r.data; if (d.stops.length < 2 || !engReady(d.engine)) return false;
+  const tag = engTag(d), pts = d.stops.map(s => ({ lat: s.lat, lng: s.lng }));
+  let legs;
+  if (d.engine === 'ors') legs = await orsLegs(pts);
+  else if (d.engine === 'tomtom') legs = await tomtomLegs(pts, nextWeekdayISO(d.start_time).iso);
+  else { legs = []; for (let i = 1; i < pts.length; i++) { try { legs.push(await olaLeg(pts[i - 1], pts[i])); } catch (e) { legs.push({ err: e.message }); } } }
+  d.legs = {}; legs.forEach((lg, k) => { const key = legKey(tag, pts[k], pts[k + 1]); LEG.set(key, lg); if (!lg.err) d.legs[key] = lg; });
+  return true;
+}
+async function imRun() {
+  if (!IMP) return; const { groups, settings } = IMP, done = [], probs = [];
+  $('imGo').disabled = true; busy(true, 'Importing routes…');
+  try {
+    let lastGeo = 0;
+    for (const gp of groups.values()) {
+      if (gp.rows.length < 2) { probs.push(`${gp.name}: fewer than 2 stops, skipped`); continue; }
+      for (const s of gp.rows.filter(x => x.q)) {
+        busy(true, `Looking up “${s.q}”…`);
+        const wait = 1100 - (Date.now() - lastGeo); if (wait > 0) await new Promise(res => setTimeout(res, wait)); lastGeo = Date.now();
+        try { const p = await geocodeOne(s.q); if (p) { s.lat = +p.lat.toFixed(6); s.lng = +p.lng.toFixed(6); } } catch (e) { /* reported below */ }
+        if (s.lat == null) probs.push(`${gp.name}: “${s.q}” not found, stop skipped`);
+      }
+      const ex = S.routes.find(r => r.name.toLowerCase() === gp.name.toLowerCase());
+      const base = ex ? clone(ex) : newRoute(); delete base._new;
+      base.name = gp.name.slice(0, 80);
+      Object.assign(base.data, (settings.get(gp.name.toLowerCase()) || {}).o || {});
+      base.data.stops = gp.rows.filter(s => s.lat != null).map(s => { const o = { ...s }; delete o.q; delete o._no; delete o._row; return o; });
+      normRoute(base);
+      if (base.data.stops.length < 2) { probs.push(`${gp.name}: fewer than 2 stops with a location, skipped`); continue; }
+      busy(true, `Measuring roads: ${gp.name}…`);
+      try { if (!(await measureRoute(base))) probs.push(`${gp.name}: no road routing key, times stay blank until roads are measured`); }
+      catch (e) { probs.push(`${gp.name}: ${e.message}`); }
+      busy(true, `Saving ${gp.name}…`);
+      const [row] = await DB.upsert('routes', [{ id: base.id, name: base.name, data: base.data }]);
+      const i = S.routes.findIndex(x => x.id === row.id); if (i >= 0) S.routes[i] = normRoute(row); else S.routes.push(normRoute(row));
+      done.push(row);
+      if (ex) await refreshPlansForRoute(row.id);
+    }
+  } catch (e) { console.error(e); probs.push(e.message); }
+  finally { busy(false); }
+  S.routes.sort((a, b) => a.name.localeCompare(b.name));
+  if (done.length) { const cur = S.route && done.find(x => x.id === S.route.id); if (cur || !S.route || S.route._new) { S.dirty = false; setRoute(routeById((cur || done[0]).id)); } else renderRouteSel(); }
+  $('imPrev').innerHTML = `<p class="good">${done.length} route${done.length === 1 ? '' : 's'} imported.</p>${probs.length ? `<p class="note warn">${probs.map(esc).join('<br>')}</p>` : ''}<p class="note">Tip: choose <b>All routes</b> on the map to see them together.</p>`;
+  $('imCancel').textContent = 'Close';
+  if (done.length) { fillViewAmb(); renderMasters(); }
+}
+
+/* =========================================================
+   Optimise order, reverse
+   ========================================================= */
+$('revBtn').addEventListener('click', () => { if (!S.route || S.route.data.stops.length < 2) return; S.route.data.stops.reverse(); markDirty(); renderRoute(); toast('Stop order reversed. Check times, then save.'); });
+async function distMatrix(stops) {
+  if (ENGINES.ors.key() && stops.length <= 58) {
+    const j = await httpJSON('https://api.openrouteservice.org/v2/matrix/driving-car', { method: 'POST', headers: { 'Authorization': ENGINES.ors.key(), 'Content-Type': 'application/json' }, body: JSON.stringify({ locations: stops.map(s => [s.lng, s.lat]), metrics: ['distance'], units: 'km' }) }, 'openrouteservice');
+    if (j && j.distances) return { m: j.distances.map(r => r.map(v => v == null ? 1e6 : v)), road: true };
+  }
+  return { m: stops.map(a => stops.map(b => haversine([a.lat, a.lng], [b.lat, b.lng]) * 1.35)), road: false };
+}
+function bestOrder(M, keepLast) {
+  const n = M.length, last = keepLast ? n - 1 : -1, cost = p => p.reduce((t, v, i) => i ? t + M[p[i - 1]][v] : 0, 0);
+  const left = new Set([...Array(n).keys()].filter(i => i !== 0 && i !== last)), p = [0];
+  while (left.size) { const a = p[p.length - 1]; let b = null; left.forEach(c => { if (b == null || M[a][c] < M[a][b]) b = c; }); p.push(b); left.delete(b); }
+  if (keepLast) p.push(last);
+  let better = true, guardN = 0;
+  while (better && guardN++ < 200) {
+    better = false;
+    for (let i = 1; i < p.length - 2; i++) for (let k = i + 1; k < p.length - (keepLast ? 1 : 0); k++) {
+      const q = p.slice(0, i).concat(p.slice(i, k + 1).reverse(), p.slice(k + 1));
+      if (cost(q) < cost(p) - 1e-6) { p.splice(0, p.length, ...q); better = true; }
+    }
+  }
+  return { p, cost: cost(p), before: cost([...Array(n).keys()]) };
+}
+$('optBtn').addEventListener('click', () => {
+  const r = S.route; if (!r || r.data.stops.length < 3) { toast('Add at least three stops first.', true); return; }
+  openModal(`<h2>Optimise stop order</h2><p class="note">Finds the shortest order by road distance. Stop 1 (${esc(r.data.stops[0].name)}) stays first.${ENGINES.ors.key() ? '' : ' No openrouteservice key, so straight-line distance is used.'}</p>
+    <label class="hint"><input type="checkbox" id="opLast"> Keep the last stop last (e.g. return to base: ${esc(r.data.stops[r.data.stops.length - 1].name)})</label>
+    <p class="note">Fixed arrival/departure times stay on their stops, so check them after reordering.</p>
+    <div class="row" style="margin-top:10px"><button class="btn primary" id="opGo">Optimise</button><button class="btn" id="opNo">Cancel</button></div>`);
+  $('opNo').onclick = closeModal;
+  $('opGo').onclick = async () => {
+    const keep = $('opLast').checked; closeModal();
+    const res = await guard(async () => { const dm = await distMatrix(r.data.stops); return { ...bestOrder(dm.m, keep), road: dm.road }; }, 'Working out the best order…');
+    if (!res) return;
+    if (res.cost >= res.before - 0.05) { toast('The current order is already the shortest found.'); return; }
+    const old = r.data.stops.slice(); r.data.stops = res.p.map(i => old[i]); markDirty(); renderRoute();
+    $('optNote').innerHTML = `Optimised: about ${fmt(res.before)} → ${fmt(res.cost)} km${res.road ? '' : ' (straight-line estimate)'} <button class="btn sm" id="opUndo">Undo</button>`;
+    $('opUndo').onclick = () => { if (S.route === r) { r.data.stops = old; markDirty(); renderRoute(); } $('optNote').innerHTML = ''; };
+  };
+});
+
+/* =========================================================
+   Scenario file (backup / move between browsers), print route
+   ========================================================= */
+const BK_TABLES = ['staff', 'places', 'routes', 'ambulances', 'deployments', 'radius_layouts'];
+$('bkSave').addEventListener('click', async () => {
+  const out = await guard(async () => { const t = {}; for (const n of BK_TABLES) { try { t[n] = await DB.list(n); } catch (e) { t[n] = []; } } return t; }, 'Collecting data…');
+  if (!out) return;
+  download(`ambulance-planner-scenario-${todayIST()}.json`, JSON.stringify({ app: 'ambulance-planner', version: 1, at: new Date().toISOString(), org: CFG.ORG_NAME || '', tables: out }, null, 1), 'application/json');
+  toast(`Saved: ${BK_TABLES.map(n => `${out[n].length} ${n.replace('_', ' ')}`).join(' · ')}`);
+});
+$('bkLoad').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  let j; try { j = JSON.parse(await f.text()); } catch (err) { toast('That file is not a scenario file.', true); return; }
+  if (!j || j.app !== 'ambulance-planner' || !j.tables) { toast('That file is not a scenario file from this app.', true); return; }
+  const cnt = BK_TABLES.map(n => `${(j.tables[n] || []).length} ${n}`).join(', ');
+  if (!confirm(`Load scenario saved ${j.at ? new Date(j.at).toLocaleString('en-IN') : ''}?\n\n${cnt}\n\nRecords with the same ID are replaced; nothing else is deleted.`)) return;
+  const skipped = [];
+  const ok = await guard(async () => {
+    for (const n of BK_TABLES) {
+      const rows = (j.tables[n] || []).filter(x => x && x.id); if (!rows.length) continue;
+      const keys = [...new Set(rows.flatMap(Object.keys))].filter(k => k !== 'created_at' && k !== 'updated_at'), step = n === 'radius_layouts' ? 5 : 400;
+      try { for (let i = 0; i < rows.length; i += step) { busy(true, `Loading ${n}… ${Math.min(i + step, rows.length)}/${rows.length}`); await DB.upsert(n, rows.slice(i, i + step).map(x => pick(x, keys))); } }
+      catch (e) { if (n === 'places' || n === 'radius_layouts') skipped.push(`${n}: ${e.message}`); else throw e; }
+    }
+    return true;
+  }, 'Loading scenario…');
+  if (ok) { S.dirty = false; if (skipped.length) alert(`Loaded, except:\n${skipped.join('\n')}`); toast('Scenario loaded. Reloading…'); setTimeout(() => location.reload(), 900); }
+});
+$('routePrint').addEventListener('click', () => {
+  const r = S.route; if (!r || !r.data.stops.length) { toast('Open a route with stops first.', true); return; }
+  const d = r.data, sc = schedule(r), t = sc.tot;
+  const gm = `https://www.google.com/maps/dir/${d.stops.slice(0, 10).map(s => `${s.lat},${s.lng}`).join('/')}`;
+  $('printArea').innerHTML = `<div><h1>${esc(r.name || 'Route')}</h1>
+    <div>${esc(CFG.ORG_NAME || '')} · Start ${esc(d.start_time)} · planned ${d.speed} km/h · default halt ${d.halt} min · radius ${d.radius} km · roads by ${esc(ENGINES[d.engine].name)}</div>
+    <div>${t.stops} stops · ${fmt(t.km)} km by road · driving ${dur(t.drive)} · halts ${dur(t.halt)} · ${min2hm(t.start)} → ${min2hm(t.end)}${dayTag(t.end)} (${dur(t.dur)})${t.pop_best != null ? ` · population ${fmtInt(t.pop_best)}` : ''} · ${fmt(t.area, 0)} km² covered</div>
+    <h2>Schedule</h2><table><tr><th>#</th><th>Location</th><th>Arrive</th><th>Halt</th><th>Depart</th><th>Road km</th><th>Travel</th><th>Speed</th><th>Population</th><th>Nearest hospital</th><th>Remarks</th></tr>
+    ${sc.rows.map((x, i) => { const s = x.s, nh = nearestPlace(s, 'Hospital'); return `<tr><td>${i + 1}</td><td>${esc(s.name)}<br><span style="color:#555">${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}</span></td><td>${min2hm(x.arr)}${x.arr != null ? dayTag(x.arr) : ''}</td><td>${x.halt != null ? Math.round(x.halt) + ' min' : ''}</td><td>${min2hm(x.dep)}</td><td>${i ? (x.leg && isFinite(x.leg.km) ? fmt(x.leg.km) : '–') : 'Start'}</td><td>${i && x.travel != null ? dur(x.travel) : ''}</td><td>${i && x.speed ? fmt(x.speed, 0) + ' km/h' : ''}</td><td>${x.pop != null ? fmtInt(x.pop) : ''}</td><td>${nh ? `${esc(nh.p.name)} (${fmt(nh.km)} km)` : ''}</td><td>${esc(s.remarks || '')}</td></tr>`; }).join('')}</table>
+    <p style="font-size:10px;color:#555">Google Maps (first 10 stops): ${esc(gm)}</p></div>`;
+  setTimeout(() => window.print(), 150);
+});
+
 async function boot() {
   busy(true, 'Loading…');
   try { if (!(await checkAdmin())) { busy(false); return; } } catch (e) { busy(false); toast(e.message, true); }
   try {
     [S.staff, S.amb, S.routes] = await Promise.all([DB.list('staff'), DB.list('ambulances'), DB.list('routes')]);
-    S.routes = S.routes.map(normRoute); cacheMaster();
+    S.routes = S.routes.map(normRoute);
+    try { S.places = await DB.list('places'); } catch (e) { S.places = []; S.placesErr = e.message; toast('Hospitals & bases need the updated database: run setup.sql again in Supabase → SQL Editor.', true); }
+    cacheMaster(); drawPlaces(); fillViewAmb();
   } catch (e) { busy(false); toast(e.message, true); renderSettings(); showTab('settings'); return; }
   busy(false);
   setRoute(S.routes[0] || newRoute());

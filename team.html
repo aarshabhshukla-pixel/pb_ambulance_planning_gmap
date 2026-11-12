@@ -143,8 +143,11 @@ function render() {
   }
   const items = pi.rows.map(r => `<li class="${r.st === 'done' ? 'done' : r.i === pi.cur ? 'cur' : ''}"><span class="n">${r.st === 'done' ? '✓' : r.i + 1}</span><span>${esc(r.stop.name)}${r.stop.remarks ? `<small>${esc(r.stop.remarks)}</small>` : ''}${r.stop.km != null ? `<small>${fmt(r.stop.km)} km from previous</small>` : ''}</span><span class="t">${r.actArr ? `${istHM(r.actArr)}${r.actDep ? '–' + istHM(r.actDep) : ''}<small>actual</small>` : `${istHM(r.stop.arr)}–${istHM(r.stop.dep)}<small>planned</small>`}</span></li>`).join('');
   const q = queue().length;
+  const restFrom = pr.done || pi.allDeparted ? stops.length : pi.rows[pi.cur].st === 'at' ? pi.cur + 1 : pi.cur, rest = stops.slice(restFrom, restFrom + 10);
+  const ll = s => `${(+s.lat).toFixed(6)},${(+s.lng).toFixed(6)}`;
+  const allUrl = rest.length ? `https://www.google.com/maps/dir/?api=1&destination=${ll(rest[rest.length - 1])}${rest.length > 1 ? `&waypoints=${encodeURIComponent(rest.slice(0, -1).map(ll).join('|'))}` : ''}&travelmode=driving` : '';
   $('main').innerHTML = cur + `
-    <div class="card"><div class="lbl">Route · ${pi.nDone} of ${stops.length} done</div><ul class="list">${items}</ul></div>
+    <div class="card"><div class="lbl">Route · ${pi.nDone} of ${stops.length} done</div><ul class="list">${items}</ul>${allUrl ? `<a class="link" style="display:block;margin-top:10px" href="${allUrl}" target="_blank" rel="noopener">Open the remaining ${rest.length > 1 ? `${rest.length} stops` : 'stop'} in Google Maps${stops.length - restFrom > 10 ? ' (next 10)' : ''}</a>` : ''}</div>
     <div class="card"><label class="loc"><input type="checkbox" id="share"${watchId != null ? ' checked' : ''}><span><b>Share live location with the control room</b><br><span class="note">Only while this page is open. Your location is sent to your hospital’s control room for this deployment and stops when you untick this or finish.${lastPing ? ` Last sent ${ago(lastPing)}.` : ''}</span></span></label>
     ${'wakeLock' in navigator ? `<label class="loc" style="margin-top:10px"><input type="checkbox" id="awake"${wake ? ' checked' : ''}><span>Keep the screen on</span></label>` : ''}</div>
     <p class="note" style="text-align:center">${q ? `${q} tap${q > 1 ? 's' : ''} waiting to be sent · ` : ''}Updated ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} · <button class="link" id="reload">Refresh</button></p>`;

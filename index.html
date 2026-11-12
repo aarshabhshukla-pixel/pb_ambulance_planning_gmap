@@ -444,7 +444,7 @@ body.printing .mapwrap{width:760px;height:520px}
     <div class="tb-group">
       <a class="tbtn modlink" href="route.html" title="Switch to the Route deployment module"><svg class="i"><use href="#i-road"/></svg><span>Route deployment</span></a>
       <div class="seg" id="segDeploy" title="Which deployment the map and numbers show"><button data-v="current">Current</button><button data-v="plan">New plan</button></div>
-      <div class="seg" id="segCalc" title="How travel times are worked out"><button data-v="est">Estimate</button><button data-v="google">Google</button><button data-v="ola">Ola</button></div>
+      <div class="seg" id="segCalc" title="How travel times are worked out"><button data-v="est" title="Straight line × circuity ÷ period speed">Estimate</button><button data-v="ors" title="Real road distance (free, openrouteservice) ÷ period speed">Roads</button><button data-v="google">Google</button><button data-v="ola">Ola</button></div>
       <div class="pill" id="pillPeriod" title="Traffic period: changes speeds, shifts and call load"><svg class="i" style="width:16px;height:16px"><use href="#i-time"/></svg><select id="periodTop" aria-label="Traffic period"></select></div>
       <div class="pill" id="pillPlan" title="Day and shift of the new plan"><svg class="i" style="width:16px;height:16px"><use href="#i-cal"/></svg><select id="daySel" aria-label="Day"></select><select id="shiftSel" aria-label="Shift"></select></div>
       <button id="undoBtn" class="tbtn" title="Undo (Ctrl+Z)"><svg class="i"><use href="#i-undo"/></svg></button>
@@ -580,7 +580,7 @@ body.printing .mapwrap{width:760px;height:520px}
             <label class="check" style="margin:0"><input type="checkbox" id="incPartners"> Count partner ambulances</label>
             <select id="uBulk" class="inline">
               <option value="">Bulk action…</option>
-              <option value="master">Sync with ambulance master (Route module)</option>
+              <option value="master">Sync ambulances &amp; hospitals from Route module</option>
               <option value="activate">Activate all</option>
               <option value="pin">Pin all</option>
               <option value="unpin">Unpin all</option>
@@ -652,7 +652,14 @@ body.printing .mapwrap{width:760px;height:520px}
           <p class="note" id="periodNote"></p>
         </div>
         <div class="card">
-          <div class="card-h"><h3><svg class="i"><use href="#i-road"/></svg>Speeds from Google traffic</h3><span class="aside">needs Google</span></div>
+          <div class="card-h"><h3><svg class="i"><use href="#i-road"/></svg>Speeds from TomTom traffic</h3><span class="aside">free, no card</span></div>
+          <p class="note">Asks TomTom for drive times with its usual traffic for each period on the next weekday, between your hospitals / bases and points across the zone. Sets each period's speed and the road circuity. Uses about 48 route lookups; TomTom's free allowance is 20,000 a month.</p>
+          <input type="password" id="ttKey" class="full-in" placeholder="TomTom API key (or TOMTOM_API_KEY in config.js)" autocomplete="off">
+          <button class="btn primary full" id="ttCalRun" style="margin-top:8px">Calibrate all periods with TomTom</button>
+          <div id="ttCalOut"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3><svg class="i"><use href="#i-road"/></svg>Speeds from Google traffic</h3><span class="aside">needs Google (paid)</span></div>
           <p class="note">Asks Google for drive times with predicted traffic between your hospitals / ambulance bases and points across the zone, at each period's midpoint on the next weekday. Sets each period's speed and the road circuity from Google's answers. Uses up to 1,000 route lookups.</p>
           <button class="btn primary full" id="gCalRun">Calibrate all periods with Google</button>
           <div id="gCalOut"></div>
@@ -717,7 +724,7 @@ body.printing .mapwrap{width:760px;height:520px}
         </div>
         <div class="card">
           <div class="card-h"><h3><svg class="i"><use href="#i-road"/></svg>Road travel check</h3><span class="aside">optional</span></div>
-          <p class="note">Uses <a href="https://openrouteservice.org/dev/#/signup" target="_blank" rel="noopener">OpenRouteService</a> (free API key, stored only in this browser) to draw real drive-time areas and to measure road circuity. Routing uses normal car speeds without live traffic or siren priority.</p>
+          <p class="note">Uses <a href="https://openrouteservice.org/dev/#/signup" target="_blank" rel="noopener">openrouteservice</a> (free key, no card; best put in config.js as ORS_API_KEY) to draw real drive-time areas and to measure road circuity. The same key powers the <b>Roads</b> switch in the top bar. Routing uses normal car speeds without live traffic or siren priority.</p>
           <input type="password" id="orsKey" class="full-in" placeholder="Paste OpenRouteService API key" autocomplete="off">
           <div class="btns3" style="margin-top:8px"><select id="roadUnit" class="inline"></select><button class="btn sm" id="roadBtn">Show road reach</button><button class="btn sm" id="roadAll">All own units</button><button class="btn sm" id="roadClear">Clear</button></div>
           <div class="btns3"><button class="btn sm" id="circBtn">Measure road circuity</button><button class="btn sm primary" id="circApply" disabled>Apply</button></div>
@@ -787,8 +794,11 @@ body.printing .mapwrap{width:760px;height:520px}
               <option value="gaps">Gaps beyond goal / standard</option>
               <option value="unit">Nearest-ambulance zones</option>
               <option value="demand">Demand density</option>
+              <option value="hex">Hexagon grid (response time per hexagon)</option>
             </select>
           </div>
+          <div class="ctl" id="hexKmCtl" hidden><label for="hexKm">Hexagon size</label><select id="hexKm"><option value="0.5">0.5 km wide</option><option value="1">1 km wide</option><option value="2">2 km wide</option><option value="3">3 km wide</option></select></div>
+          <div class="ctl"><label for="covShape">Coverage shape</label><select id="covShape"><option value="circle">Circle (radius)</option><option value="hex">Hexagon (corners at the radius)</option></select></div>
           <label class="check"><input type="checkbox" id="rings"> Show deployment band rings</label>
           <div class="btns" id="scBtns">
             <button class="btn" data-proxy="waBtn" style="background:#16a34a;border-color:#16a34a;color:#fff"><svg class="i"><use href="#i-wa"/></svg>Share on WhatsApp</button>
@@ -801,6 +811,20 @@ body.printing .mapwrap{width:760px;height:520px}
           <button id="resetBtn" class="btn full" style="margin-top:8px">Reset to default</button>
           <input type="file" id="loadFile" accept=".json,application/json" hidden>
           <p class="note">Layouts autosave in this browser. The same actions are also under Share &amp; export (top right). Share links carry the whole layout (not imported calls) and work once the app is hosted. PDF report opens the print dialog; choose “Save as PDF”. If the map shows a warning instead of streets, pick another base map.</p>
+        </div>
+        <div class="card" id="clCard">
+          <div class="card-h"><h3><svg class="i"><use href="#i-save"/></svg>Saved layouts (database)</h3><span class="chip off" id="clStatus">Checking…</span></div>
+          <p class="note" id="clNote" style="margin-top:0"></p>
+          <div id="clLogin" hidden>
+            <input type="email" id="clEmail" class="full-in" placeholder="Admin email" autocomplete="username">
+            <input type="password" id="clPw" class="full-in" placeholder="Password" autocomplete="current-password" style="margin-top:6px">
+            <div class="btns3" style="margin-top:8px"><button class="btn sm" id="clSignIn">Sign in</button></div>
+          </div>
+          <div id="clMain" hidden>
+            <div class="btns3"><button class="btn sm" id="clSaveNew"><svg class="i"><use href="#i-save"/></svg>Save as new layout</button><button class="btn sm" id="clSaveNow">Save now</button><button class="btn sm" id="clReload">Refresh list</button></div>
+            <label class="check"><input type="checkbox" id="clAuto" checked> Autosave the open layout to the database</label>
+            <div id="clList"></div>
+          </div>
         </div>
         <div class="card">
           <div class="card-h"><h3>How the numbers are worked out</h3></div>
@@ -838,6 +862,8 @@ body.printing .mapwrap{width:760px;height:520px}
 
 <script src="config.js"></script>
 <script src="leaflet.js"></script>
+<script src="supabase.js"></script>
+<script src="db.js"></script>
 <script>
 (function(){
 'use strict';
@@ -908,13 +934,13 @@ function defSettings() {
     speeds: { am: 30, day: 30, pm: 30, night: 30 }, starts: { am: 8, day: 11, pm: 17, night: 21 }, shares: null, period: 'day',
     circ: 1, zoneR: 10, bandMin: 2, bandMax: 4, grid: 0.25, lock: false, obj: 'std', demand: 'uniform', bg: 0.2,
     dispatch: 3, goalMin: 10, stdMin: 20, avail: 95, popLakh: null, callsDay: null, onScene: 0, handover: 0,
-    zonesOn: true, caseType: 'all', includePartners: true, periodFilter: false,
+    zonesOn: true, caseType: 'all', includePartners: true, periodFilter: false, shape: 'circle',
     types: { A: t(), B: t(), C: t(), D: t() }
   };
 }
 const DEF_SHOW = { hosp: true, units: true, cover: true, lines: true, zone: true, slow: true, hot: true, routes: true, ghosts: true, gchk: true, custom: true };
 const DEF_VIEW = { basemap: 'auto', heat: 'off', rings: true, dots: true, theme: null, baseline: null, tab: 'over',
-  deploy: 'current', calc: 'est', day: 0, shiftId: null, roadN: 60, autoRoad: true, show: { ...DEF_SHOW } };
+  deploy: 'current', calc: 'est', day: 0, shiftId: null, roadN: 60, autoRoad: true, hexKm: 1, show: { ...DEF_SHOW } };
 let st, view;
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAYS_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -923,9 +949,10 @@ function sanitizeView(v) {
   const o = { ...DEF_VIEW, ...(v || {}) };
   o.show = { ...DEF_SHOW, ...((v && v.show) || {}) };
   if (!['current', 'plan'].includes(o.deploy)) o.deploy = 'current';
-  if (!['est', 'google', 'ola'].includes(o.calc)) o.calc = 'est';
+  if (!['est', 'ors', 'google', 'ola'].includes(o.calc)) o.calc = 'est';
   o.day = clamp(Math.round(+o.day || 0), 0, 6);
   o.roadN = [30, 60, 100].includes(+o.roadN) ? +o.roadN : 60;
+  o.hexKm = [0.5, 1, 2, 3].includes(+o.hexKm) ? +o.hexKm : 1;
   return o;
 }
 function sanitizeLayers(arr) {
@@ -982,6 +1009,7 @@ function sanitizeSettings(so) {
   if (!PERIODS[s.period]) s.period = 'day';
   if (!CASES[s.caseType]) s.caseType = 'all';
   if (!['std', 'goal', 'balanced', 'coverage', 'response'].includes(s.obj)) s.obj = 'std';
+  if (!['circle', 'hex'].includes(s.shape)) s.shape = 'circle';
   return s;
 }
 function defaultState() {
@@ -1032,6 +1060,7 @@ function save() {
     const o = { version: 5, ...st, view };
     if (st.incidents.length > 20000) o.incidents = [];
     localStorage.setItem(LS, JSON.stringify(o));
+    if (typeof clQueue === 'function') clQueue();
   } catch (e) {
     if (!saveWarned && typeof showToast === 'function') { saveWarned = true; showToast('This layout is too big to autosave in the browser (large imported layers?). Use Share &amp; export → Save scenario file.'); }
   }
@@ -1204,6 +1233,11 @@ function buildDemand() {
    U = [{x, y, r, resp, trans, f}]  f = minutes per km for that unit
    ========================================================= */
 const NB = 3000, BWm = 0.1, HIST = new Float64Array(NB);
+/* coverage area of one ambulance: a circle of radius r, or a flat-top hexagon whose corners are r km from the base */
+const R32 = Math.sqrt(3) / 2;
+const inHex = (dx, dy, r) => { const ax = Math.abs(dx), ay = Math.abs(dy); return ay <= R32 * r && R32 * ax + 0.5 * ay <= R32 * r; };
+const inCover = (dx, dy, r) => st.settings.shape === 'hex' ? inHex(dx, dy, r) : dx * dx + dy * dy <= r * r;
+const shapeWord = () => st.settings.shape === 'hex' ? 'hexagon' : 'radius';
 function evalCore(U, d, full) {
   const s = st.settings, m = U.length, nh = HXY.length, disp = s.dispatch, goal = s.goalMin, std = s.stdMin;
   const r = { coverage: 0, overlap: 0, inGoal: 0, inStd: 0, avgResp: NaN, avgReach: NaN, avgCycle: NaN, avgCycleKm: NaN, p90: NaN, avgAll: NaN,
@@ -1211,7 +1245,7 @@ function evalCore(U, d, full) {
               coveredKm2: NaN, zoneKm2: d.mode === 'grid' ? d.n * d.cellKm2 : NaN, mode: d.mode, hasResp: U.some(u => u.resp), hasTrans: U.some(u => u.trans) };
   if (!d.n || d.totW <= 0) return r;
   const ux = U.map(u => u.x), uy = U.map(u => u.y), ur = U.map(u => u.r), uf = U.map(u => u.f), uR = U.map(u => u.resp), uT = U.map(u => u.trans);
-  const zOn = ZONES.length > 0;
+  const zOn = ZONES.length > 0, HEXC = s.shape === 'hex';
   const UHt = new Float64Array(m * nh), UHk = new Float64Array(m * nh);
   for (let j = 0; j < m; j++) for (let h = 0; h < nh; h++) {
     const dd = Math.hypot(ux[j] - HXY[h][0], uy[j] - HXY[h][1]), km = zOn ? dd * zoneMult(HXY[h][0], HXY[h][1], ux[j], uy[j]) : dd;
@@ -1226,7 +1260,7 @@ function evalCore(U, d, full) {
     for (let j = 0; j < m; j++) {
       const dx = px - ux[j], dy = py - uy[j], dd = Math.sqrt(dx * dx + dy * dy);
       const km = zOn ? dd * zoneMult(ux[j], uy[j], px, py) : dd, t = km * uf[j];
-      if (uR[j]) { if (t < bestT) { bestT = t; bestJ = j; } if (dd <= ur[j]) { cnt++; if (t < covT) { covT = t; covJ = j; } } }
+      if (uR[j]) { if (t < bestT) { bestT = t; bestJ = j; } if (HEXC ? inHex(dx, dy, ur[j]) : dd <= ur[j]) { cnt++; if (t < covT) { covT = t; covJ = j; } } }
       if (uT[j] && t < trT) { trT = t; trK = km; trJ = j; }
     }
     const rg = d.ring[i], hi = d.hi[i];
@@ -1259,7 +1293,7 @@ function evalCore(U, d, full) {
 /* Busy-unit model: each ambulance is free with probability pFree (availability × not on another call).
    A call is served by the fastest *free* unit; this gives the realistic share reached within goal / standard. */
 function evalExpected(U, d, pFree) {
-  const s = st.settings, disp = s.dispatch, goal = s.goalMin, std = s.stdMin, zOn = ZONES.length > 0;
+  const s = st.settings, disp = s.dispatch, goal = s.goalMin, std = s.stdMin, zOn = ZONES.length > 0, HEXC = s.shape === 'hex';
   const R = U.filter(u => u.resp), m = R.length, out = { inGoalX: 0, inStdX: 0, expCov: 0 };
   if (!d.n || d.totW <= 0 || !m) return out;
   const tmp = new Float64Array(m), q = 1 - pFree;
@@ -1269,7 +1303,7 @@ function evalExpected(U, d, pFree) {
     let cnt = 0;
     for (let j = 0; j < m; j++) {
       const u = R[j], dx = px - u.x, dy = py - u.y, dd = Math.sqrt(dx * dx + dy * dy), t = (zOn ? dd * zoneMult(u.x, u.y, px, py) : dd) * u.f;
-      if (dd <= u.r) cnt++;
+      if (HEXC ? inHex(dx, dy, u.r) : dd <= u.r) cnt++;
       let k = j; while (k > 0 && tmp[k - 1] > t) { tmp[k] = tmp[k - 1]; k--; } tmp[k] = t;
     }
     let pr = 1, g = 0, sd = 0;
@@ -1472,7 +1506,7 @@ function ringLabel(x, y, t, c, g) {
 }
 /* show / hide built-in layers */
 const SHOW_LAYERS = [
-  ['hosp', 'Hospitals', () => [hospG]], ['units', 'Ambulances', () => [unitG]], ['cover', 'Coverage circles', () => [circG]], ['lines', 'Lines to hospital', () => [lineG]],
+  ['hosp', 'Hospitals', () => [hospG]], ['units', 'Ambulances', () => [unitG]], ['cover', 'Coverage areas (circle / hexagon)', () => [circG]], ['lines', 'Lines to hospital', () => [lineG]],
   ['rings', 'Deployment band rings', () => [bandG]], ['zone', 'Target zone', () => [zoneG]], ['slow', 'Slow zones', () => [slowG]], ['hot', 'Demand hotspots', () => [hotG]],
   ['dots', 'Imported call dots', () => [incG]], ['routes', 'Plan: moves between shifts', () => [routeG]], ['ghosts', 'Plan: spots in other shifts', () => [ghostG]],
   ['gchk', 'Google check points', () => [gChkG, roadG]], ['custom', 'My layers', () => [customG]]
@@ -1512,7 +1546,8 @@ function renderUnits() {
   st.units.forEach((u, i) => {
     const e = EU[i];
     const line = L.polyline([[e.lat, e.lng], [e.lat, e.lng]], { color: u.color, weight: 1.6, dashArray: '4 6', opacity: .85, interactive: false }).addTo(lineG);
-    const circ = L.circle([e.lat, e.lng], { radius: u.r * 1000, color: u.color, weight: 1.6, fillColor: u.color, fillOpacity: .12, interactive: false }).addTo(circG);
+    const co = { color: u.color, weight: 1.6, fillColor: u.color, fillOpacity: .12, interactive: false };
+    const circ = (st.settings.shape === 'hex' ? L.polygon(hexLatLngs(e.lat, e.lng, u.r), co) : L.circle([e.lat, e.lng], { radius: u.r * 1000, ...co })).addTo(circG);
     const m = L.marker([e.lat, e.lng], {
       draggable: true, autoPan: true, zIndexOffset: 500,
       icon: L.divIcon({ className: 'mk', html: `<div class="amb t-${u.type}${u.owner === 'partner' ? ' partner' : ''}" style="--c:${u.color}">${esc(u.name)}</div><div class="tag"></div>`, iconSize: [0, 0] })
@@ -1524,6 +1559,7 @@ function renderUnits() {
     uL[u.id] = { m, circ, line };
   });
 }
+function hexLatLngs(lat, lng, r) { const [x, y] = xy({ lat, lng }); return [0, 1, 2, 3, 4, 5].map(k => ll(x + r * Math.cos(k * Math.PI / 3), y + r * Math.sin(k * Math.PI / 3))); }
 function projectToBand(x, y) {
   const s = st.settings, [d, hi] = nearestHosp(x, y), [hx, hy] = HXY[hi];
   if (d >= s.bandMin && d <= s.bandMax) return [x, y];
@@ -1555,7 +1591,7 @@ function placeUnitGeom() {
     const L_ = uL[u.id]; if (!L_) return;
     const s = US[i], h = st.hospitals[s.hi], on = COUNTED.has(i), e = EU[i];
     L_.m.setLatLng([e.lat, e.lng]);
-    L_.circ.setLatLng([e.lat, e.lng]); L_.circ.setRadius(u.r * 1000);
+    if (L_.circ.setRadius) { L_.circ.setLatLng([e.lat, e.lng]); L_.circ.setRadius(u.r * 1000); } else L_.circ.setLatLngs(hexLatLngs(e.lat, e.lng, u.r));
     L_.circ.setStyle(on ? { color: u.color, fillColor: u.color, fillOpacity: u.owner === 'partner' ? .07 : .12, dashArray: u.owner === 'partner' ? '6 5' : null, opacity: 1 } : { color: '#94a3b8', fillOpacity: 0, dashArray: '3 5', opacity: .8 });
     L_.line.setLatLngs([[e.lat, e.lng], [h.lat, h.lng]]);
     L_.line.setStyle({ opacity: on ? .85 : 0 });
@@ -1597,6 +1633,13 @@ let heatLayer = null;
 const TC = [[34, 197, 94], [132, 204, 22], [234, 179, 8], [249, 115, 22], [239, 68, 68]];
 const heatBins = () => { const s = st.settings; return [s.goalMin / 2, s.goalMin, (s.goalMin + s.stdMin) / 2, s.stdMin]; };
 function drawHeat() {
+  if (view.heat === 'hex') {
+    if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+    clearTimeout(hexTimer);
+    if (pending && pending.live) hexTimer = setTimeout(drawHexGrid, 150); else drawHexGrid();
+    return;
+  }
+  if (hexG.getLayers().length) { hexG.clearLayers(); hexSum = null; }
   if (view.heat === 'off' || (view.heat === 'demand' && st.settings.demand === 'incidents')) { if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; } return; }
   const s = st.settings, R = s.zoneR, bw = ZB.x1 - ZB.x0, bh = ZB.y1 - ZB.y0, MAXP = 240;
   const W = Math.max(2, Math.round(bw >= bh ? MAXP : MAXP * bw / bh)), H = Math.max(2, Math.round(bh >= bw ? MAXP : MAXP * bh / bw));
@@ -1614,7 +1657,7 @@ function drawHeat() {
       let best = Infinity, bi = 0, inC = false;
       for (let j = 0; j < A.length; j++) {
         const dd = Math.hypot(x - A[j].x, y - A[j].y), t = (zOn ? dd * zoneMult(A[j].x, A[j].y, x, y) : dd) * A[j].f;
-        if (t < best) { best = t; bi = j; } if (dd <= A[j].r) inC = true;
+        if (t < best) { best = t; bi = j; } if (inCover(x - A[j].x, y - A[j].y, A[j].r)) inC = true;
       }
       const rt = s.dispatch + best;
       let c, a;
@@ -1629,6 +1672,44 @@ function drawHeat() {
   const bounds = L.latLngBounds(ll(ZB.x0, ZB.y0), ll(ZB.x1, ZB.y1)), url = hc.toDataURL();
   if (!heatLayer) heatLayer = L.imageOverlay(url, bounds, { pane: 'heat', interactive: false }).addTo(map);
   else { heatLayer.setUrl(url); heatLayer.setBounds(bounds); }
+}
+
+/* hexagon grid: the zone tiled with equal hexagons, each coloured by call → scene time from its centre */
+const hexG = L.layerGroup().addTo(map);
+let hexTimer = 0, hexSum = null;
+function drawHexGrid() {
+  hexG.clearLayers(); hexSum = null;
+  if (view.heat !== 'hex') return;
+  const s = st.settings, R = s.zoneR, S3 = Math.sqrt(3);
+  let w = view.hexKm || 1, a = w / S3;                       // w = width across flats, a = corner distance
+  while (((ZB.x1 - ZB.x0) * (ZB.y1 - ZB.y0)) / (1.5 * S3 * a * a) > 6000) { w *= 2; a = w / S3; }
+  const idx = countedIdx().filter(i => TYPES[st.units[i].type].resp), A = buildU(idx), zOn = ZONES.length > 0, tb = heatBins(), HEXC = s.shape === 'hex';
+  const key = (x, y) => { const q = (2 / 3 * x) / a, r = (-x / 3 + S3 / 3 * y) / a, cz = -q - r; let rq = Math.round(q), rr = Math.round(r); const rz = Math.round(cz), dq = Math.abs(rq - q), dr = Math.abs(rr - r), dz = Math.abs(rz - cz); if (dq > dr && dq > dz) rq = -rr - rz; else if (dr > dz) rr = -rq - rz; return rq + ',' + rr; };
+  const dem = new Map(), T = D && D.totW > 0 ? D.totW : 0;
+  if (T) for (let i = 0; i < D.n; i++) { const k = key(D.x[i], D.y[i]); dem.set(k, (dem.get(k) || 0) + D.w[i]); }
+  const sum = { w, n: 0, band: [0, 0, 0, 0, 0], dem: [0, 0, 0, 0, 0], unc: 0, uncDem: 0 };
+  const q0 = Math.floor(ZB.x0 / (1.5 * a)) - 1, q1 = Math.ceil(ZB.x1 / (1.5 * a)) + 1;
+  for (let q = q0; q <= q1; q++) {
+    const r0 = Math.floor(ZB.y0 / (S3 * a) - q / 2) - 1, r1 = Math.ceil(ZB.y1 / (S3 * a) - q / 2) + 1;
+    for (let r = r0; r <= r1; r++) {
+      const cx = a * 1.5 * q, cy = a * S3 * (r + q / 2);
+      if (nearestHosp(cx, cy)[0] > R) continue;
+      let best = Infinity, bj = -1, bkm = 0, cnt = 0;
+      for (let j = 0; j < A.length; j++) {
+        const dx = cx - A[j].x, dy = cy - A[j].y, dd = Math.hypot(dx, dy), km = zOn ? dd * zoneMult(A[j].x, A[j].y, cx, cy) : dd, t = km * A[j].f;
+        if (t < best) { best = t; bj = j; bkm = km; }
+        if (HEXC ? inHex(dx, dy, A[j].r) : dd <= A[j].r) cnt++;
+      }
+      const rt = bj >= 0 ? s.dispatch + best : Infinity, b = rt <= tb[0] ? 0 : rt <= tb[1] ? 1 : rt <= tb[2] ? 2 : rt <= tb[3] ? 3 : 4, dw = T ? (dem.get(q + ',' + r) || 0) / T * 100 : null;
+      sum.n++; sum.band[b]++; if (dw != null) sum.dem[b] += dw; if (!cnt) { sum.unc++; if (dw != null) sum.uncDem += dw; }
+      const pts = [0, 1, 2, 3, 4, 5].map(k => ll(cx + a * Math.cos(k * Math.PI / 3), cy + a * Math.sin(k * Math.PI / 3))), c = bj >= 0 ? TC[b] : [148, 163, 184];
+      const u = bj >= 0 ? st.units[idx[bj]] : null;
+      L.polygon(pts, { renderer: canvasR, color: '#ffffff', weight: .7, opacity: .8, fillColor: `rgb(${c})`, fillOpacity: cnt ? .5 : .28 })
+        .bindTooltip(() => u ? `<b>${fmt(rt)} min</b> call → scene<br>Nearest: ${esc(u.name)} · ${fmt(bkm)} km${cnt ? `<br>Inside ${cnt} coverage area${cnt > 1 ? 's' : ''}` : '<br>Outside every coverage area'}${dw != null ? `<br>${fmt(dw, 2)}% of calls` : ''}` : 'No ambulance on duty', { sticky: true })
+        .addTo(hexG);
+    }
+  }
+  hexSum = sum; renderLegend();
 }
 
 /* legend */
@@ -1649,7 +1730,7 @@ function renderLegend() {
   if (st.units.some(u => u.owner === 'partner')) h += '<div class="lg"><i class="sw" style="border:2px dashed #475569;border-radius:6px"></i>Partner ambulance</div>';
   if (view.rings) h += `<div class="lg"><i class="sw" style="background:rgba(22,163,74,.25)"></i>${s.bandMin}–${s.bandMax} km deployment band</div>`;
   h += `<div class="lg"><i class="sw" style="border:2px solid #dc2626"></i>${s.zoneR} km target zone</div>` +
-    '<div class="lg"><i class="sw" style="background:rgba(37,99,235,.2);border:1.5px solid #2563eb"></i>Ambulance radius</div>';
+    `<div class="lg"><i class="sw" style="background:rgba(37,99,235,.2);border:1.5px solid #2563eb${s.shape === 'hex' ? ';clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%);border:0' : ''}"></i>Ambulance ${s.shape === 'hex' ? 'hexagon (corners at the radius)' : 'radius'}</div>`;
   if (st.zones.length) h += '<div class="lg"><i class="sw" style="background:rgba(14,165,233,.3);border:1.5px dashed #0284c7"></i>Slow zone</div>';
   if (roadG.getLayers().length) h += `<div class="lg"><i class="sw" style="background:rgba(124,58,237,.3);border:1.5px solid #7c3aed"></i>Road reach ≤ ${s.goalMin} / ${s.stdMin} min</div>`;
   if (gChkG.getLayers().length) h += `<div class="lg" style="font-weight:700;margin-top:7px">Google check (call → scene)</div><div class="lg"><i class="sw" style="background:#16a34a;border-radius:6px;width:9px;height:9px"></i>≤ ${s.goalMin} min</div><div class="lg"><i class="sw" style="background:#f59e0b;border-radius:6px;width:9px;height:9px"></i>≤ ${s.stdMin} min</div><div class="lg"><i class="sw" style="background:#dc2626;border-radius:6px;width:9px;height:9px"></i>over ${s.stdMin} min</div>`;
@@ -1657,7 +1738,12 @@ function renderLegend() {
   st.layers.filter(l => l.visible && l.feats.length).slice(0, 6).forEach(l => { h += `<div class="lg"><i class="sw" style="background:${esc(l.color)};border-radius:6px 6px 6px 0"></i>${esc(l.name)}</div>`; });
   if (s.demand === 'hotspots') h += '<div class="lg"><i class="sw" style="background:#f97316;border-radius:6px"></i>Demand hotspot</div>';
   if (s.demand === 'incidents' && view.dots) h += '<div class="lg"><i class="sw" style="background:#ef4444;border-radius:6px;width:8px;height:8px"></i>Call / population point</div>';
-  if (view.heat === 'time') {
+  if (view.heat === 'hex' && hexSum) {
+    const tb = heatBins().map(v => +(+v).toFixed(1)), hs = hexSum;
+    const lab = [`≤ ${tb[0]} min`, `${tb[0]}–${tb[1]} min`, `${tb[1]}–${tb[2]} min`, `${tb[2]}–${tb[3]} min`, `> ${tb[3]} min`];
+    h += `<div class="lg" style="font-weight:700;margin-top:7px">Hexagons ${hs.w} km wide · call → scene</div>` + TC.map((c, i) => `<div class="lg"><i class="sw" style="background:rgba(${c},.7);clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)"></i>${lab[i]} · ${hs.band[i]} (${fmt(hs.dem[i], 0)}% of calls)</div>`).join('') +
+      `<div class="lg">Outside every ${shapeWord() === 'hexagon' ? 'hexagon' : 'circle'}: ${hs.unc} (${fmt(hs.uncDem, 0)}% of calls) · faded</div>`;
+  } else if (view.heat === 'time') {
     const tb = heatBins().map(v => +(+v).toFixed(1));
     const lab = [`≤ ${tb[0]} min`, `${tb[0]}–${tb[1]} min`, `${tb[1]}–${tb[2]} min`, `${tb[2]}–${tb[3]} min`, `> ${tb[3]} min`];
     h += '<div class="lg" style="font-weight:700;margin-top:7px">Call → scene (incl. dispatch)</div>' + TC.map((c, i) => `<div class="lg"><i class="sw" style="background:rgba(${c},.7)"></i>${lab[i]}</div>`).join('');
@@ -2071,14 +2157,15 @@ function renderNotes() {
   $('notes').innerHTML = [
     dm,
     `Call → scene = dispatch (${s.dispatch} min) + straight-line km × circuity (${s.circ}) × slow-zone penalty ÷ (period speed × type speed factor). Calibrate speeds from real trips, or measure circuity on real roads, to tighten this.`,
+    `Coverage area: ${s.shape === 'hex' ? 'a hexagon around each base with its corners at the unit’s radius (flat sides are 87% of the radius away). Hexagons tile without gaps, so planned areas can sit side by side.' : 'a circle of the unit’s radius around each base.'} The hexagon grid overlay tiles the zone with equal hexagons and colours each by call → scene time from its centre.`,
     'Radius coverage counts Type A, C and D units on duty. Each call goes to the fastest covering unit; transport, hospital reach and full-cycle TAT use the fastest BLS/ALS unit.',
     `“Realistic” figures allow for ambulances being unavailable or already on a call. Each unit is free with probability = availability (${s.avail}%) × (1 − busy share). Busy share = calls per hour in the period × time per call ÷ BLS/ALS units on duty. Time per call = full cycle + on-scene + handover. The call goes to the fastest free unit.`,
     '“All day” weights each period’s realistic figure by its share of calls (period length, your entry, or your call data). Off-shift ambulances don’t count in that period.',
     'Benchmarks: NHM National Ambulance Service guidelines (June 2026): 20-min response standard, 10-min urban goal, dispatch under 3 min, BLS 1 per lakh, ALS 1 per 5 lakh, PTV 1 per 50,000, 3–4 trips and 80–120 km per ambulance per day, 95% availability. Ambulance types: AIS-125 National Ambulance Code.',
     'Auto-optimize, fleet sizing and the period figures use a coarser grid for speed, so they can differ slightly from the live KPIs.',
-    'With Google Maps set up, “Speeds from Google traffic” sets period speeds and circuity from Google’s predicted drive times, and “Check this layout on Google roads” measures the current layout on real roads.',
-    `Top-bar switches: Current = every ambulance at its base, on its 24×7/day/night shift, in the traffic period picked. New plan = the day-wise schedule (Schedule tab): each ambulance's spot and duty per day and shift. Estimate / Google / Ola = where travel times come from.`,
-    `Road times (Google or Ola): drive times are fetched for ${view.roadN} sampled demand points from each on-duty ambulance, from each point to the hospitals, and back to base. Avg time to reach, ≤ goal / standard, hospital reach, full-cycle TAT, road km and speed then use those times; radius coverage, the heatmap, the optimizer and live dragging stay on the estimate. Google uses its predicted traffic for the day and time of the shift; Ola gives today’s live traffic only, whatever day or shift is picked. Results are kept only for this session.`,
+    '“Speeds from TomTom traffic” (free key) sets each period’s speed and the road circuity from TomTom’s usual-traffic drive times. Google can do the same if you have a Google key with billing.',
+    `Top-bar switches: Current = every ambulance at its base, on its 24×7/day/night shift, in the traffic period picked. New plan = the day-wise schedule (Schedule tab): each ambulance's spot and duty per day and shift. Estimate / Roads = where travel times come from (Google and Ola appear only if their keys are set).`,
+    `Roads (free, openrouteservice): real road km, timed at each period’s speed. Road times (Google or Ola): drive times are fetched for ${view.roadN} sampled demand points from each on-duty ambulance, from each point to the hospitals, and back to base. Avg time to reach, ≤ goal / standard, hospital reach, full-cycle TAT, road km and speed then use those times; radius coverage, the heatmap, the optimizer and live dragging stay on the estimate. Google uses its predicted traffic for the day and time of the shift; Ola gives today’s live traffic only, whatever day or shift is picked. Results are kept only for this session.`,
     'A shift’s speed and call load come from the traffic periods it spans. Week figures weight each shift by its share of calls.'
   ].map(t => `<li>${esc(t)}</li>`).join('');
 }
@@ -2232,16 +2319,24 @@ map.on('popupclose', () => { if (map.hasLayer(searchPin)) setTimeout(() => { if 
 function syncMaster() {
   let m = null; try { m = JSON.parse(localStorage.getItem('ap-master') || 'null'); } catch (e) {}
   const list = m && Array.isArray(m.ambulances) ? m.ambulances.filter(a => a.reg_no && a.active !== false && isFinite(a.base_lat) && isFinite(a.base_lng) && a.base_lat != null) : [];
-  if (!list.length) { showToast('No ambulance master found in this browser. Open Route deployment → Ambulances & staff once (with bases filled in), then try again.'); return; }
-  const T = { BLS: 'C', ALS: 'D', PTV: 'B', FRV: 'A' }; let add = 0, upd = 0;
-  change(`Syncing ${list.length} ambulances from the master`, () => {
+  const hos = m && Array.isArray(m.places) ? m.places.filter(p => p.kind === 'Hospital' && p.active !== false && p.name && isFinite(p.lat) && isFinite(p.lng) && p.lat != null) : [];
+  if (!list.length && !hos.length) { showToast('No ambulance or hospital master found in this browser. Open Route deployment → Ambulances & staff once (with bases and hospitals filled in), then try again.'); return; }
+  const T = { BLS: 'C', ALS: 'D', PTV: 'B', FRV: 'A' }; let add = 0, upd = 0, hAdd = 0, hUpd = 0;
+  const capsOf = (txt, old) => { const t = String(txt || '').toLowerCase(), c = { ...(old || { cath: false, stroke: false, trauma: false, nicu: false }) }; if (t) { c.cath = /cath|cardi|pci/.test(t); c.stroke = /stroke|neuro/.test(t); c.trauma = /trauma/.test(t); c.nicu = /nicu|neonat/.test(t); } return c; };
+  change(`Syncing ${list.length} ambulances and ${hos.length} hospitals from the master`, () => {
     list.forEach(a => {
       const type = T[a.type] || 'C', u = st.units.find(x => x.name.replace(/[\s-]/g, '').toUpperCase() === a.reg_no);
       if (u) { u.lat = a.base_lat; u.lng = a.base_lng; if (u.type !== type) { u.type = type; u.r = st.settings.types[type].r; } u.active = true; upd++; }
       else { st.units.push(newUnit({ lat: a.base_lat, lng: a.base_lng }, { name: a.reg_no, type })); add++; }
     });
+    hos.forEach(p => {
+      const near = x => Math.hypot((x.lng - p.lng) * KM_LNG, (x.lat - p.lat) * KM_LAT) < 0.15;
+      const h = st.hospitals.find(x => String(x.name).trim().toLowerCase() === p.name.trim().toLowerCase()) || st.hospitals.find(near);
+      if (h) { h.name = p.name; h.lat = p.lat; h.lng = p.lng; h.caps = capsOf(p.capabilities, h.caps); hUpd++; }
+      else { st.hospitals.push({ id: uid('h'), name: p.name, lat: p.lat, lng: p.lng, caps: capsOf(p.capabilities) }); hAdd++; }
+    });
   });
-  showToast(`Master synced: ${add} added, ${upd} updated (matched by registration number). Ambulances not in the master were left as they are.`);
+  showToast(`Master synced: ambulances ${add} added, ${upd} updated (by registration no.) · hospitals ${hAdd} added, ${hUpd} updated (by name or same spot). Items not in the master were left as they are.`);
 }
 function newUnit(p, extra = {}) {
   const type = extra.type || $('bestType').value || 'C';
@@ -2594,7 +2689,7 @@ async function gLoadConfig() {
     if (j && j.google && j.google.enabled) { G.server = true; G.serverKey = typeof j.google.key === 'string' ? j.google.key : null; }
     if (j && j.ola && j.ola.enabled) OL.server = true;
   } catch (e) { /* app is not running with the /api/maps function */ }
-  finally { G.loaded = true; OL.loaded = true; gRenderStatus(); oRenderStatus(); renderBasemapOptions(); setBasemap(); renderLegend(); refresh(); }
+  finally { G.loaded = true; OL.loaded = true; gRenderStatus(); oRenderStatus(); renderBasemapOptions(); setBasemap(); renderLegend(); renderTopbar(); refresh(); }
 }
 function gRenderStatus() {
   const el = $('gStatus');
@@ -2747,6 +2842,70 @@ $('gCalRun').addEventListener('click', () => gGuard($('gCalRun'), 'Asking Google
     syncControls(); $('gCalApply').disabled = true; $('gCalApply').textContent = 'Applied';
   });
 }));
+
+/* =========================================================
+   Free traffic calibration: TomTom Routing API (no card, monthly free allowance)
+   ========================================================= */
+const LS_TT = 'fp-tomtom-key', TT_CFG = ((window.APP_CONFIG || {}).TOMTOM_API_KEY || '').trim();
+try { $('ttKey').value = localStorage.getItem(LS_TT) || ''; } catch (e) {}
+if (TT_CFG) $('ttKey').placeholder = 'Using the key in config.js (paste here only to override)';
+const ttKeyVal = () => $('ttKey').value.trim() || TT_CFG;
+$('ttKey').addEventListener('change', e => { try { localStorage.setItem(LS_TT, e.target.value.trim()); } catch (err) {} });
+async function ttRoute(a, b, depIso) {
+  const u = `https://api.tomtom.com/routing/1/calculateRoute/${a[0].toFixed(6)},${a[1].toFixed(6)}:${b[0].toFixed(6)},${b[1].toFixed(6)}/json?key=${encodeURIComponent(ttKeyVal())}&traffic=true&travelMode=car&routeType=fastest&routeRepresentation=summaryOnly&computeTravelTimeFor=all${depIso ? '&departAt=' + encodeURIComponent(depIso) : ''}`;
+  let r; try { r = await fetch(u); } catch (e) { throw new Error('couldn’t reach TomTom (no internet, or the network blocked it)'); }
+  if (!r.ok) {
+    let m = ''; try { const j = await r.json(); m = (j.error && (j.error.description || j.error.message)) || j.detailedError && j.detailedError.message || ''; } catch (e) {}
+    if (r.status === 403 || r.status === 401) throw new Error('TomTom refused the key. Check TOMTOM_API_KEY');
+    if (r.status === 429) throw new Error('TomTom rate limit reached; wait a minute and retry');
+    if (r.status === 400 && /no route|NO_ROUTE/i.test(m)) return null;
+    throw new Error(`TomTom error ${r.status}${m ? ': ' + m : ''}`);
+  }
+  const j = await r.json(), s = j && j.routes && j.routes[0] && j.routes[0].summary;
+  return s && s.lengthInMeters > 0 ? { km: s.lengthInMeters / 1000, sec: s.travelTimeInSeconds, free: s.noTrafficTravelTimeInSeconds || NaN } : null;
+}
+let TTCAL = null;
+$('ttCalRun').addEventListener('click', async () => {
+  const out = $('ttCalOut'), btn = $('ttCalRun');
+  if (!ttKeyVal()) { out.innerHTML = '<p class="note">Add a free TomTom key first: developer.tomtom.com → sign up → copy the key, then put it in config.js (TOMTOM_API_KEY) or paste it above.</p>'; return; }
+  const s = st.settings, origins = [], seen = new Set();
+  st.hospitals.concat(st.units.filter(u => u.active)).forEach(o => { const k = o.lat.toFixed(4) + ',' + o.lng.toFixed(4); if (!seen.has(k) && origins.length < 6) { seen.add(k); origins.push([o.lat, o.lng]); } });
+  const pts = sampleDemand(16, 4242).filter(q => origins.some(o => { const [ox, oy] = xy({ lat: o[0], lng: o[1] }); return Math.hypot(ox - q.x, oy - q.y) > 1; })).slice(0, 12);
+  if (!pts.length) { out.innerHTML = '<p class="note">No demand points in the zone to measure.</p>'; return; }
+  const pairs = pts.map((q, k) => ({ o: origins[k % origins.length], q }));
+  const o0 = btn.innerHTML; btn.disabled = true;
+  try {
+    const rows = {}; let roadKm = 0, slKm = 0;
+    for (const p of PORDER) {
+      const dep = periodDeparture(p);
+      btn.textContent = `Asking TomTom: ${PERIODS[p].toLowerCase()}…`;
+      let rk = 0, sec = 0, free = 0, n = 0, sk = 0;
+      for (let i = 0; i < pairs.length; i += 4) {
+        const res = await Promise.all(pairs.slice(i, i + 4).map(x => ttRoute(x.o, [x.q.lat, x.q.lng], dep.iso)));
+        res.forEach((r, k) => {
+          if (!r || !(r.sec > 0)) return; const x = pairs[i + k], [ox, oy] = xy({ lat: x.o[0], lng: x.o[1] });
+          rk += r.km; sec += r.sec; if (isFinite(r.free)) free += r.free; sk += Math.hypot(ox - x.q.x, oy - x.q.y); n++;
+        });
+        await new Promise(res2 => setTimeout(res2, 250));
+      }
+      if (n) { rows[p] = { n, dep, speed: rk / (sec / 3600), free: free ? rk / (free / 3600) : NaN }; roadKm += rk; slKm += sk; }
+    }
+    if (!Object.keys(rows).length) throw new Error('TomTom returned no usable routes');
+    const circ = Math.round(clamp(roadKm / slKm, 1, 2.5) * 20) / 20;
+    TTCAL = { circ, speeds: {} };
+    PORDER.forEach(p => { if (rows[p]) TTCAL.speeds[p] = Math.round(clamp(rows[p].speed, 5, 80)); });
+    out.innerHTML = `<table class="fs"><thead><tr><th>Period</th><th>TomTom departure</th><th>Routes</th><th>With traffic</th><th>Without</th><th>Now</th></tr></thead><tbody>` +
+      PORDER.map(p => { const r = rows[p]; return r ? `<tr><td><b>${PERIODS[p]}</b></td><td>${r.dep.label}</td><td>${r.n}</td><td><b>${TTCAL.speeds[p]} km/h</b></td><td>${fmt(r.free, 0)} km/h</td><td>${s.speeds[p]} km/h</td></tr>` : `<tr><td>${PERIODS[p]}</td><td colspan="5" class="hint">no routes returned</td></tr>`; }).join('') +
+      `</tbody></table><p class="note">Road distance is <b>${circ}×</b> the straight line (now ${s.circ}×). Speeds are road km ÷ TomTom's drive time with its usual traffic for that day and time, for a normal car. If your ambulances beat traffic with sirens, raise the type speed factor under Settings → Ambulance types.</p>
+      <button class="btn primary full" id="ttCalApply">Apply TomTom speeds and circuity</button>`;
+    $('ttCalApply').addEventListener('click', () => {
+      const c = TTCAL; if (!c) return;
+      change('Calibrating speeds and circuity from TomTom traffic', () => { st.settings.circ = c.circ; Object.keys(c.speeds).forEach(p => { st.settings.speeds[p] = c.speeds[p]; }); });
+      syncControls(); $('ttCalApply').disabled = true; $('ttCalApply').textContent = 'Applied';
+    });
+  } catch (e) { out.innerHTML = `<p class="note" style="color:var(--bad);font-weight:600">${esc(e.message || String(e))}</p>`; }
+  finally { btn.disabled = false; btn.innerHTML = o0; }
+});
 
 /* check the current layout against Google drive times */
 function expectWithin(sorted, pFree) {
@@ -2929,7 +3088,13 @@ function decodePoly(str, prec) {
 }
 const polyNear = (pts, a) => pts.length > 1 && Math.abs(pts[0][0] - a[0]) < 0.05 && Math.abs(pts[0][1] - a[1]) < 0.05;
 const wpG = p => ({ location: { latLng: { latitude: +p[0].toFixed(6), longitude: +p[1].toFixed(6) } } });
-async function provRoute(prov, a, b, dep) {
+async function provRoute(prov, a, b, dep, kmh) {
+  if (prov === 'ors') {
+    const j = await orsPost('directions/driving-car/geojson', { coordinates: [[a[1], a[0]], [b[1], b[0]]], radiuses: [-1, -1], instructions: false });
+    const f = j && j.features && j.features[0]; if (!f) return null;
+    const km = (f.properties.summary && f.properties.summary.distance || 0) / 1000;
+    return { km, sec: km / (kmh || curSpeed()) * 3600, pts: (f.geometry.coordinates || []).map(c => [c[1], c[0]]) };
+  }
   if (prov === 'google') {
     const j = await gCall('route', { origin: wpG(a), destination: wpG(b), travelMode: 'DRIVE', routingPreference: 'TRAFFIC_AWARE', ...(dep ? { departureTime: dep.iso } : {}) });
     const r = j && j.routes && j.routes[0]; if (!r) return null;
@@ -2951,8 +3116,8 @@ async function provRoute(prov, a, b, dep) {
    Road-time engine: travel times on real roads for the KPIs
    ========================================================= */
 const RD = { cache: new Map(), routes: new Map(), busy: false, timer: 0, err: '', errSig: '', pts: null, ptsSig: '', prog: '', used: 0 };
-const provName = p => p === 'google' ? 'Google' : p === 'ola' ? 'Ola Maps' : 'Estimate';
-const provReady = p => p === 'google' ? gAvailable() : p === 'ola' ? oAvailable() : false;
+const provName = p => p === 'google' ? 'Google' : p === 'ola' ? 'Ola Maps' : p === 'ors' ? 'openrouteservice' : 'Estimate';
+const provReady = p => p === 'google' ? gAvailable() : p === 'ola' ? oAvailable() : p === 'ors' ? !!orsKeyVal() : false;
 const r5 = v => +(+v).toFixed(5);
 const pairKey = (prov, tk, a, b) => `${prov}|${tk}|${a[0]},${a[1]}>${b[0]},${b[1]}`;
 function roadPts() {
@@ -2971,7 +3136,7 @@ function depAt(dayIdx, hourFloat) {
            label: `${DAYS[wd]} ${t.getUTCDate()} ${MONTHS[t.getUTCMonth()]}, ${pad2(t.getUTCHours())}:${pad2(t.getUTCMinutes())} IST`, key: `${wd}@${pad2(t.getUTCHours())}${pad2(t.getUTCMinutes())}` };
 }
 function winDeparture(win) { return win.plan ? depAt(win.d, win.sh.start + shiftLen(win.sh) / 2) : depAt(null, st.settings.starts[win.p] + periodHours(win.p) / 2); }
-const tkOf = (prov, win) => prov === 'ola' ? 'live' : winDeparture(win).key;
+const tkOf = (prov, win) => prov === 'ola' ? 'live' : prov === 'ors' ? 'road' : winDeparture(win).key;
 const unitRefs = idx => idx.map(i => ({ u: st.units[i], lat: EU[i].lat, lng: EU[i].lng }));
 
 /* KPIs for a roster from cached road times; { missing: n } when some pairs are not fetched yet */
@@ -2979,16 +3144,18 @@ function roadCalc(units, win, prov) {
   const s = st.settings, pts = roadPts(); if (!pts.length || !units.length) return null;
   const tk = tkOf(prov, win), H = st.hospitals.map(h => [r5(h.lat), r5(h.lng)]), get = (a, b) => RD.cache.get(pairKey(prov, tk, a, b));
   const U = units.map(r => ({ r, a: [r5(r.lat), r5(r.lng)], xy: xy({ lat: r.lat, lng: r.lng }), rad: r.u.r, spd: s.types[r.u.type].spd || 1, resp: TYPES[r.u.type].resp, trans: TYPES[r.u.type].trans }));
+  /* minutes for a road leg: openrouteservice gives road km, timed at the window's speed; Google/Ola give traffic times */
+  const tm = (e, spd) => prov === 'ors' ? e.km / ((win.speed || 25) * spd) * 60 : e.sec / 60 / spd;
   let missing = 0; const rows = [];
   for (const p of pts) {
     const b = [p.lat, p.lng], list = [], [px, py] = xy(p); let tr = null, reach = null, ret = null, cov = Infinity;
     U.forEach((u, k) => {
       const e = get(u.a, b); if (e === undefined) { missing++; return; } if (!e) return;
-      const t = e.sec / 60 / u.spd;
-      if (u.resp) { list.push({ t, k, e }); if (Math.hypot(px - u.xy[0], py - u.xy[1]) <= u.rad && t < cov) cov = t; }
+      const t = tm(e, u.spd);
+      if (u.resp) { list.push({ t, k, e }); if (inCover(px - u.xy[0], py - u.xy[1], u.rad) && t < cov) cov = t; }
       if (u.trans && (!tr || t < tr.t)) tr = { t, k, e };
     });
-    if (tr) CAPIDX.forEach(hi => { const e = get(b, H[hi]); if (e === undefined) { missing++; return; } if (e && (!reach || e.sec < reach.e.sec)) reach = { hi, e }; });
+    if (tr) CAPIDX.forEach(hi => { const e = get(b, H[hi]); if (e === undefined) { missing++; return; } if (e && (!reach || tm(e, 1) < tm(reach.e, 1))) reach = { hi, e }; });
     if (tr && reach) { ret = get(H[reach.hi], U[tr.k].a); if (ret === undefined) { missing++; ret = null; } }
     list.sort((x, y) => x.t - y.t); rows.push({ list, tr, reach, ret, cov });
   }
@@ -3001,7 +3168,7 @@ function roadCalc(units, win, prov) {
     if (r.cov < Infinity) { cS += disp + r.cov; cN++; rts.push(disp + r.cov); } if (rt <= s.goalMin) inG++; if (rt <= s.stdMin) inS++;
     const pu = per[f.k]; pu.n++; pu.rt += rt; pu.km += f.e.km; pu.h += f.t / 60; km += f.e.km; hrs += f.t / 60;
     if (r.tr && r.reach && r.ret) {
-      const tu = U[r.tr.k], reachM = r.reach.e.sec / 60 / tu.spd, retM = r.ret.sec / 60 / tu.spd;
+      const tu = U[r.tr.k], reachM = tm(r.reach.e, tu.spd), retM = tm(r.ret, tu.spd);
       reachS += reachM; cycS += disp + r.tr.t + reachM + retM; cycK += r.tr.e.km + r.reach.e.km + r.ret.km; cycN++;
     }
   });
@@ -3012,12 +3179,12 @@ function roadCalc(units, win, prov) {
   const unit = {};
   U.forEach((u, k) => {
     const pu = per[k], [ux, uy] = xy({ lat: u.a[0], lng: u.a[1] }), hi = nearestHosp(ux, uy)[1], bh = get(H[hi], u.a);
-    unit[u.r.u.id] = { n: pu.n, share: nr ? pu.n / nr * 100 : 0, rt: pu.n ? pu.rt / pu.n : NaN, km: pu.n ? pu.km / pu.n : NaN, speed: pu.h ? pu.km / pu.h : NaN, bh: bh ? { km: bh.km, min: bh.sec / 60 / u.spd } : null };
+    unit[u.r.u.id] = { n: pu.n, share: nr ? pu.n / nr * 100 : 0, rt: pu.n ? pu.rt / pu.n : NaN, km: pu.n ? pu.km / pu.n : NaN, speed: pu.h ? pu.km / pu.h : NaN, bh: bh ? { km: bh.km, min: tm(bh, u.spd) } : null };
   });
   return { missing: 0, src: prov, npts: N, unreach, inGoal: inG / N * 100, inStd: inS / N * 100, inGoalX: gx / N * 100, inStdX: sx / N * 100,
     avgResp: cN ? cS / cN : NaN, avgAll: nr ? sum / nr : NaN, p90: rts.length ? rts[Math.floor(0.9 * (rts.length - 1))] : NaN,
     avgReach: cycN ? reachS / cycN : NaN, avgCycle, avgCycleKm: cycN ? cycK / cycN : NaN, q, pFree, speed: hrs ? km / hrs : NaN, respKm: nr ? km / nr : NaN, unit,
-    tlabel: prov === 'ola' ? 'live traffic now' : winDeparture(win).label };
+    tlabel: prov === 'ola' ? 'live traffic now' : prov === 'ors' ? `road km at ${fmt(win.speed, 0)} km/h, ${win.label}` : winDeparture(win).label };
 }
 function roadSlot(deploy, win) {
   if (view.calc === 'est' || !provReady(view.calc)) return null;
@@ -3052,7 +3219,7 @@ function roadPlan(jobs, prov) {
   });
   return { reqs, count };
 }
-const provMatrix = (prov, O, Dd, depIso, onStep) => prov === 'google' ? gMatrix(O, Dd, depIso, onStep) : oMatrix(O, Dd, onStep);
+const provMatrix = (prov, O, Dd, depIso, onStep) => prov === 'google' ? gMatrix(O, Dd, depIso, onStep) : prov === 'ors' ? orsMatrix(O, Dd, onStep) : oMatrix(O, Dd, onStep);
 async function roadFetch(jobs, why) {
   const prov = view.calc; if (!provReady(prov) || RD.busy) return false;
   const plan = roadPlan(jobs, prov); if (!plan.count) return true;
@@ -3072,26 +3239,27 @@ const viewJobs = () => [{ units: unitRefs([...COUNTED]), win: metrics.ctx }];
 function roadMaybeAuto() {
   clearTimeout(RD.timer);
   if (!view.autoRoad || view.calc === 'est' || !provReady(view.calc) || RD.busy || (pending && pending.live) || !metrics || !metrics.roadNeed) return;
-  if (metrics.roadNeed > 3000) return;                       // big batches only on request
+  if (metrics.roadNeed > autoCap()) return;                       // big batches only on request
   if (RD.err && RD.errSig === roadSig()) return;             // don't retry the same failing request in a loop
   RD.timer = setTimeout(() => { RD.errSig = roadSig(); roadFetch(viewJobs(), 'Getting road times'); }, 700);
 }
+const autoCap = () => view.calc === 'ors' ? 20000 : 3000;   // openrouteservice: one request covers up to 3,500 pairs
 function renderRoadCard() {
   const m = metrics, chip = $('roadChip'), stEl = $('roadStatus'), btn = $('roadRun'); if (!m) return;
   $('roadN').value = String(view.roadN); $('autoRoad').checked = !!view.autoRoad;
   const p = view.calc, name = provName(p);
   btn.disabled = RD.busy || p === 'est';
-  if (p === 'est') { chip.textContent = 'Estimate'; chip.className = 'chip off'; stEl.innerHTML = 'Numbers use the straight-line estimate. Switch the top bar to <b>Google</b> or <b>Ola</b> for drive times on real roads.'; return; }
-  if (!provReady(p)) { chip.textContent = 'Not set up'; chip.className = 'chip warn'; stEl.innerHTML = `${name} isn’t set up yet, so the estimate is shown. Add a key in Settings → ${name}.`; return; }
+  if (p === 'est') { chip.textContent = 'Estimate'; chip.className = 'chip off'; stEl.innerHTML = 'Numbers use the straight-line estimate. Switch the top bar to <b>Roads</b> (free) for real road distances.'; return; }
+  if (!provReady(p)) { chip.textContent = 'Not set up'; chip.className = 'chip warn'; stEl.innerHTML = p === 'ors' ? 'No openrouteservice key yet, so the estimate is shown. Get a free key at openrouteservice.org and put it in <b>config.js</b> (ORS_API_KEY), or paste it under Plan → Road travel check.' : `${name} isn’t set up yet, so the estimate is shown. Add a key in Settings → ${name}.`; return; }
   if (RD.busy) { chip.textContent = 'Working'; chip.className = 'chip warn'; stEl.textContent = RD.prog || 'Getting road times…'; return; }
   if (m.road) {
     chip.textContent = `${name} roads`; chip.className = 'chip ok';
-    stEl.innerHTML = `Drive times for ${m.road.npts} demand points · ${esc(m.road.tlabel)}. Avg speed <b>${fmt(m.road.speed, 0)} km/h</b>, avg <b>${fmt(m.road.respKm)} km</b> by road to the scene.${m.road.unreach ? ` ${m.road.unreach} points had no route.` : ''}${p === 'ola' ? ' Ola gives today’s live traffic for every day and shift.' : ''} Radius coverage and the heatmap stay estimates.`;
+    stEl.innerHTML = `Drive times for ${m.road.npts} demand points · ${esc(m.road.tlabel)}. Avg speed <b>${fmt(m.road.speed, 0)} km/h</b>, avg <b>${fmt(m.road.respKm)} km</b> by road to the scene.${m.road.unreach ? ` ${m.road.unreach} points had no route.` : ''}${p === 'ola' ? ' Ola gives today’s live traffic for every day and shift.' : ''}${p === 'ors' ? ' Times = real road km ÷ the period’s speed (Traffic tab); calibrate those speeds free with TomTom.' : ''} Radius coverage and the heatmap stay estimates.`;
     return;
   }
   chip.textContent = 'Estimate shown'; chip.className = 'chip warn';
   stEl.innerHTML = (RD.err ? `<span style="color:var(--bad);font-weight:650">${esc(RD.err)}</span><br>` : '') +
-    (m.roadNeed ? `About <b>${m.roadNeed.toLocaleString('en-IN')}</b> ${name} route lookups needed for ${esc(m.ctx.label)}. ${pending && pending.live ? 'They’ll be fetched when you drop the ambulance.' : view.autoRoad && m.roadNeed <= 3000 && !RD.err ? 'Fetching shortly…' : 'Click Calculate.'}` : 'No ambulance on duty to measure.');
+    (m.roadNeed ? `About <b>${m.roadNeed.toLocaleString('en-IN')}</b> ${name} road distances needed for ${esc(m.ctx.label)}${p === 'ors' ? ` (${Math.ceil(m.roadNeed / 3500)} request${m.roadNeed > 3500 ? 's' : ''})` : ''}. ${pending && pending.live ? 'They’ll be fetched when you drop the ambulance.' : view.autoRoad && m.roadNeed <= autoCap() && !RD.err ? 'Fetching shortly…' : 'Click Calculate.'}` : 'No ambulance on duty to measure.');
 }
 $('roadRun').addEventListener('click', () => { RD.err = ''; RD.errSig = roadSig(); roadFetch(viewJobs(), 'Getting road times'); });
 $('roadN').addEventListener('change', e => { view.roadN = +e.target.value; save(); RD.err = ''; refresh(); renderSchedule(); });
@@ -3202,7 +3370,7 @@ $('routesFetch').addEventListener('click', async () => {
   try {
     for (let k = 0; k < legs.length; k++) {
       b.textContent = `Routing ${k + 1}/${legs.length}…`;
-      const l = legs[k], r = await provRoute(prov, [l.from.lat, l.from.lng], [l.to.lat, l.to.lng], prov === 'google' ? depAt(l.d, l.sh.start) : null);
+      const l = legs[k], r = await provRoute(prov, [l.from.lat, l.from.lng], [l.to.lat, l.to.lng], prov === 'google' ? depAt(l.d, l.sh.start) : null, hoursSpeed([l.sh.start]));
       RD.routes.set(routeKey(prov, l), r || { sec: NaN });
     }
   } catch (e) { showToast(`${provName(prov)}: ${esc(e.message || String(e))}`); }
@@ -3294,7 +3462,7 @@ $('weekRoad').addEventListener('click', async () => {
   if (!provReady(prov)) { showToast(`${provName(prov)} isn’t set up yet. Add a key in Settings.`); return; }
   const need = roadPlan(weekJobs(), prov).count;
   if (!need) { showToast('Road times for the whole week are already loaded.'); return; }
-  if (need > 1500 && !confirm(`This uses about ${need.toLocaleString('en-IN')} ${provName(prov)} route lookups. Continue?`)) return;
+  if (need > (prov === 'ors' ? 35000 : 1500) && !confirm(`This uses about ${need.toLocaleString('en-IN')} ${provName(prov)} route lookups. Continue?`)) return;
   RD.err = ''; await roadFetch(weekJobs(), 'Getting road times for the week');
 });
 function renderSchedule() {
@@ -3366,7 +3534,7 @@ $('schedCsv').addEventListener('click', () => {
    ========================================================= */
 function renderTopbar() {
   document.querySelectorAll('#segDeploy button').forEach(b => b.classList.toggle('on', b.dataset.v === view.deploy));
-  document.querySelectorAll('#segCalc button').forEach(b => b.classList.toggle('on', b.dataset.v === view.calc));
+  document.querySelectorAll('#segCalc button').forEach(b => { b.classList.toggle('on', b.dataset.v === view.calc); b.style.display = b.dataset.v === 'google' || b.dataset.v === 'ola' ? (provReady(b.dataset.v) || view.calc === b.dataset.v ? '' : 'none') : ''; });
   $('pillPeriod').style.display = view.deploy === 'plan' ? 'none' : '';
   $('pillPlan').style.display = view.deploy === 'plan' ? '' : 'none';
   $('daySel').innerHTML = DAYS_FULL.map((d, i) => `<option value="${i}">${d}</option>`).join(''); $('daySel').value = String(view.day);
@@ -3381,7 +3549,7 @@ $('segCalc').addEventListener('click', e => {
   const v = b.dataset.v;
   RD.err = '';
   change(v === 'est' ? 'Switching to the straight-line estimate' : `Switching to ${provName(v)} road times`, () => { view.calc = v; });
-  if (v !== 'est' && !provReady(v)) showToast(`${provName(v)} isn’t set up yet, so the estimate is shown. Add a key in Settings → ${provName(v)}.`);
+  if (v !== 'est' && !provReady(v)) showToast(v === 'ors' ? 'No openrouteservice key yet, so the estimate is shown. Put your free key in config.js (ORS_API_KEY) or under Plan → Road travel check.' : `${provName(v)} isn’t set up yet, so the estimate is shown. Add a key in Settings → ${provName(v)}.`);
   if (v === 'google' && gAvailable()) gEnsureGoogleBase();
 });
 $('daySel').addEventListener('change', e => change(`Showing the new plan for ${DAYS_FULL[+e.target.value]}`, () => { view.day = +e.target.value; }));
@@ -3534,14 +3702,33 @@ function renderRoadUnits() {
   if (cur && st.units.some(u => u.id === cur)) sel.value = cur;
 }
 try { $('orsKey').value = localStorage.getItem(LS_KEY) || ''; } catch (e) {}
-$('orsKey').addEventListener('change', e => { try { localStorage.setItem(LS_KEY, e.target.value.trim()); } catch (err) {} });
+const ORS_CFG = ((window.APP_CONFIG || {}).ORS_API_KEY || '').trim();
+if (ORS_CFG) $('orsKey').placeholder = 'Using the key in config.js (paste here only to override)';
+const orsKeyVal = () => $('orsKey').value.trim() || ORS_CFG;
+$('orsKey').addEventListener('change', e => { try { localStorage.setItem(LS_KEY, e.target.value.trim()); } catch (err) {} RD.err = ''; renderTopbar(); refresh(); });
 const orsWhy = err => err instanceof TypeError ? 'couldn’t reach OpenRouteService (no internet, or the network blocked it)' : err.message;
 async function orsPost(path, body) {
-  const key = $('orsKey').value.trim();
-  if (!key) throw new Error('paste an OpenRouteService API key first (free at openrouteservice.org)');
+  const key = orsKeyVal();
+  if (!key) throw new Error('add a free openrouteservice key in config.js (ORS_API_KEY) or under Plan → Road travel check');
   const res = await fetch('https://api.openrouteservice.org/v2/' + path, { method: 'POST', headers: { 'Authorization': key, 'Content-Type': 'application/json', 'Accept': 'application/json, application/geo+json' }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? 'the key was rejected' : res.status === 429 ? 'the daily quota is used up' : `error ${res.status}`);
+  if (!res.ok) { let m = ''; try { const j = await res.json(); m = (j.error && (j.error.message || j.error)) || j.message || ''; } catch (e) {} throw new Error(res.status === 401 || res.status === 403 ? 'the openrouteservice key was rejected' : res.status === 429 ? 'openrouteservice limit reached for now; wait a minute (or until tomorrow for the daily quota)' : `openrouteservice error ${res.status}${m ? ': ' + (typeof m === 'string' ? m : JSON.stringify(m)) : ''}`); }
   return res.json();
+}
+/* road distances (km) and free-flow times (s) for origins × destinations, ≤ 3,500 pairs per call */
+async function orsMatrix(O, Dd, onStep) {
+  const out = O.map(() => new Array(Dd.length).fill(null));
+  const dChunk = Math.min(Dd.length, 1000), oChunk = Math.max(1, Math.min(O.length, Math.floor(3500 / dChunk)));
+  const total = Math.ceil(O.length / oChunk) * Math.ceil(Dd.length / dChunk); let step = 0;
+  for (let o0 = 0; o0 < O.length; o0 += oChunk) for (let d0 = 0; d0 < Dd.length; d0 += dChunk) {
+    if (onStep) onStep(++step, total);
+    const Os = O.slice(o0, o0 + oChunk), Ds = Dd.slice(d0, d0 + dChunk);
+    const j = await orsPost('matrix/driving-car', { locations: Os.concat(Ds).map(p => [p[1], p[0]]), sources: Os.map((_, i) => i), destinations: Ds.map((_, i) => Os.length + i), metrics: ['distance', 'duration'], units: 'km' });
+    Os.forEach((_, i) => Ds.forEach((__, k) => {
+      const km = j.distances && j.distances[i] ? j.distances[i][k] : null, sec = j.durations && j.durations[i] ? j.durations[i][k] : null;
+      out[o0 + i][d0 + k] = km != null && isFinite(km) ? { km, sec: sec || 0 } : null;
+    }));
+  }
+  return out;
 }
 async function roadReach(units) {
   const s = st.settings, info = $('roadInfo');
@@ -3657,7 +3844,7 @@ function syncControls() {
   $('grid').value = String(s.grid); $('lock').checked = s.lock; $('obj').value = s.obj; $('demand').value = s.demand;
   $('zonesOn').checked = s.zonesOn; $('incPartners').checked = s.includePartners; $('periodFilter').checked = s.periodFilter;
   $('caseType').innerHTML = Object.entries(CASES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join(''); $('caseType').value = s.caseType;
-  $('basemap').value = BASEMAPS[view.basemap] ? view.basemap : 'auto'; $('heat').value = view.heat;
+  $('basemap').value = BASEMAPS[view.basemap] ? view.basemap : 'auto'; $('heat').value = view.heat; $('hexKm').value = String(view.hexKm || 1); $('hexKmCtl').hidden = view.heat !== 'hex'; $('covShape').value = s.shape;
   $('gTraffic').value = view.gTraffic === 'optimal' ? 'optimal' : 'aware'; if (document.activeElement !== $('gKey')) $('gKey').value = gLocal === G_CFG ? '' : gLocal; $('rings').checked = view.rings; $('incDots').checked = view.dots;
   if (!$('bestType').options.length) { $('bestType').innerHTML = typeOpts('C'); $('fsType').innerHTML = typeOpts('C', ['C', 'D']); }
   if ($('periodTop').options.length) $('periodTop').value = s.period;
@@ -3763,7 +3950,9 @@ $('lock').addEventListener('change', e => {
   });
 });
 $('basemap').addEventListener('change', e => { view.basemap = e.target.value; setBasemap(); save(); });
-$('heat').addEventListener('change', e => { view.heat = e.target.value; renderLegend(); drawHeat(); save(); });
+$('heat').addEventListener('change', e => { view.heat = e.target.value; $('hexKmCtl').hidden = view.heat !== 'hex'; renderLegend(); drawHeat(); save(); });
+$('hexKm').addEventListener('change', e => { view.hexKm = +e.target.value; drawHeat(); save(); });
+$('covShape').addEventListener('change', e => { const v = e.target.value === 'hex' ? 'hex' : 'circle'; change(`Coverage shape: ${v === 'hex' ? 'hexagon' : 'circle'}`, () => { st.settings.shape = v; }); });
 $('rings').addEventListener('change', e => { view.rings = e.target.checked; renderZone(); renderLegend(); save(); });
 $('incDots').addEventListener('change', e => { view.dots = e.target.checked; renderIncidents(); renderLegend(); save(); });
 $('scName').addEventListener('change', e => { const v = e.target.value.trim().slice(0, 80) || 'Untitled scenario'; change('Renaming scenario', () => { st.name = v; }); });
@@ -3791,6 +3980,7 @@ $('loadFile').addEventListener('change', e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   f.text().then(t => {
     let o; try { o = JSON.parse(t); } catch (err) { showToast('That file is not a valid scenario (.json).'); return; }
+    clDetach();
     if (applyLoaded(o, 'Opening scenario “%s”') && o.view) { view = { ...DEF_VIEW, ...o.view, baseline: view.baseline, tab: view.tab }; setBasemap(); syncControls(); }
   });
 });
@@ -3808,6 +3998,7 @@ $('csvBtn').addEventListener('click', () => {
 });
 $('resetBtn').addEventListener('click', () => {
   if (!confirm('Reset to the default PB Health layout with 4 ambulances? You can undo this.')) return;
+  clDetach();
   change('Reset to default layout', () => { const d = defaultState(); Object.assign(st, d); });
   syncControls(); rebuildAll(); fitAll();
 });
@@ -3851,7 +4042,7 @@ async function openSharedFromHash() {
   history.replaceState(null, '', location.pathname + location.search);
   try {
     const o = await decodeShare(code);
-    if (confirm(`Open the shared layout “${String(o.name || 'Untitled').slice(0, 80)}”? Your current layout stays available with Undo.`)) applyLoaded(o, 'Opening shared layout “%s”');
+    if (confirm(`Open the shared layout “${String(o.name || 'Untitled').slice(0, 80)}”? Your current layout stays available with Undo.`)) { clDetach(); applyLoaded(o, 'Opening shared layout “%s”'); }
   } catch (e) { showToast('That share link is damaged or incomplete.'); }
 }
 
@@ -3891,6 +4082,113 @@ function setTheme(t) { root.dataset.theme = t; $('themeIco').setAttribute('href'
 $('themeBtn').addEventListener('click', () => { setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark'); save(); });
 
 /* =========================================================
+   Saved layouts in the database (Supabase table radius_layouts; demo mode: this browser)
+   ========================================================= */
+const CL = { id: null, rows: [], ready: false, email: '', timer: 0, state: '' };
+try { CL.id = localStorage.getItem('ap-radius-cloud-id') || null; } catch (e) { /* storage unavailable */ }
+const clDB = () => window.DB || null;
+function clSetId(id) { CL.id = id; try { if (id) localStorage.setItem('ap-radius-cloud-id', id); else localStorage.removeItem('ap-radius-cloud-id'); } catch (e) { /* ignore */ } }
+function clDetach() { if (!CL.id) return; clSetId(null); clRender(); showToast('This layout is no longer linked to a saved layout. Use “Save as new layout” to keep it in the database.'); }
+function clPayload() {
+  const o = { version: 5, app: 'Ambulance Planner', ...st, view: { ...view, baseline: null } };
+  let js = JSON.stringify(o), cut = '';
+  if (js.length > 4e6) { o.incidents = []; cut = 'imported call points'; js = JSON.stringify(o); }
+  if (js.length > 4e6) { o.layers = o.layers.filter(l => l.feats.length <= 500); cut += (cut ? ' and ' : '') + 'large imported layers'; js = JSON.stringify(o); }
+  return { data: o, cut, size: js.length };
+}
+const clTime = t => t ? new Date(t).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+function clRender() {
+  const db = clDB(), cloud = !!(db && db.cloud), stEl = $('clStatus');
+  if (!db) { stEl.className = 'chip off'; stEl.textContent = 'Not available'; $('clNote').textContent = 'The database files did not load. Refresh the page.'; return; }
+  $('clLogin').hidden = CL.ready || !cloud || CL.state !== 'login'; $('clMain').hidden = !CL.ready;
+  if (CL.state === 'login') { stEl.className = 'chip warn'; stEl.textContent = 'Sign in'; $('clNote').innerHTML = 'Sign in with the same admin email you use in Route deployment. Saved layouts are shared by all admins and open on any device.'; return; }
+  if (CL.state === 'error') { stEl.className = 'chip bad'; stEl.textContent = 'Problem'; return; }
+  if (!CL.ready) return;
+  stEl.className = 'chip ' + (cloud ? 'ok' : 'warn'); stEl.textContent = cloud ? 'Database' : 'Demo (this browser)';
+  const cur = CL.rows.find(r => r.id === CL.id);
+  $('clNote').innerHTML = (cloud ? `Signed in as ${esc(CL.email)}. Layouts here are shared by all admins and open on any device.` : 'Demo mode: Supabase is not set in config.js, so layouts are kept in this browser only.') +
+    `<br>${cur ? `Open now: <b>${esc(cur.name)}</b>${$('clAuto').checked ? ' (autosaves after each change)' : ''}. ${esc(CL.msg || '')}` : 'The layout on screen is not saved in the database yet.'}`;
+  $('clList').innerHTML = CL.rows.length ? `<div class="tw"><table class="t" style="margin-top:8px"><thead><tr><th>Layout</th><th>Saved</th><th></th></tr></thead><tbody>${CL.rows.map(r => `<tr data-id="${esc(r.id)}"${r.id === CL.id ? ' style="font-weight:700"' : ''}><td>${esc(r.name)}${r.id === CL.id ? ' · open' : ''}</td><td class="note" style="margin:0">${clTime(r.updated_at)}${r.updated_by ? `<br>${esc(r.updated_by)}` : ''}</td><td style="white-space:nowrap">${r.id === CL.id ? '' : '<button class="btn sm" data-cl="open">Open</button> '}<button class="btn sm" data-cl="del" title="Delete">✕</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="note">No saved layouts yet. Press “Save as new layout”.</p>';
+}
+async function clList() {
+  const db = clDB();
+  try {
+    const rows = await db.list('radius_layouts');
+    CL.rows = rows.map(r => ({ id: r.id, name: r.name, updated_at: r.updated_at, updated_by: r.updated_by })).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+    if (CL.id && !CL.rows.some(r => r.id === CL.id)) clSetId(null);
+    CL.ready = true; CL.state = 'ok';
+  } catch (e) {
+    CL.ready = false; CL.state = 'error'; $('clStatus').className = 'chip bad'; $('clStatus').textContent = 'Problem';
+    $('clNote').innerHTML = /not set up|missing/i.test(e.message) ? 'The database has no table for saved layouts yet. Open Supabase → SQL Editor, paste the new setup.sql and press Run (safe to run again).' : /Not allowed/i.test(e.message) ? `Signed in as ${esc(CL.email)}, but this email is not on the admin list. Add it in Route deployment → Settings → Admins.` : esc(e.message);
+  }
+  clRender();
+}
+async function clInit() {
+  const db = clDB(); if (!db) { clRender(); return; }
+  try { const s = await db.auth.session(); if (db.cloud && !s) { CL.state = 'login'; clRender(); return; } CL.email = s && s.user ? s.user.email || '' : ''; } catch (e) { CL.state = 'login'; clRender(); return; }
+  await clList();
+}
+async function clWrite(id, name) {
+  const db = clDB(), p = clPayload();
+  const [row] = await db.upsert('radius_layouts', [{ id, name: String(name || 'Untitled layout').slice(0, 80), data: p.data, updated_by: CL.email || null }]);
+  const i = CL.rows.findIndex(r => r.id === row.id), lite = { id: row.id, name: row.name, updated_at: row.updated_at, updated_by: row.updated_by };
+  if (i >= 0) CL.rows[i] = lite; else CL.rows.unshift(lite);
+  CL.rows.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+  CL.msg = `Saved ${clTime(row.updated_at)}${p.cut ? ` (without ${p.cut}: too big)` : ''}.`;
+  return row;
+}
+function clQueue() {
+  if (!CL.ready || !CL.id || !$('clAuto').checked || (pending && pending.live)) return;
+  clearTimeout(CL.timer);
+  CL.timer = setTimeout(async () => { try { await clWrite(CL.id, st.name); } catch (e) { CL.msg = 'Autosave failed: ' + e.message; } clRender(); }, 4000);
+}
+$('clSignIn').addEventListener('click', async () => {
+  const db = clDB(), em = $('clEmail').value.trim(), pw = $('clPw').value;
+  if (!em || !pw) { showToast('Enter the admin email and password.'); return; }
+  try { const s = await db.auth.signIn(em, pw); CL.email = (s && s.user && s.user.email) || em; $('clPw').value = ''; await clList(); }
+  catch (e) { showToast(esc(e.message)); }
+});
+$('clPw').addEventListener('keydown', e => { if (e.key === 'Enter') $('clSignIn').click(); });
+$('clSaveNew').addEventListener('click', async () => {
+  const name = (prompt('Name for this layout (e.g. Day plan, Monsoon plan)', st.name) || '').trim(); if (!name) return;
+  try { if (name !== st.name) { st.name = name.slice(0, 80); $('scName').value = st.name; save(); } const row = await clWrite(DB.uuid(), name); clSetId(row.id); showToast(`Saved “${esc(row.name)}” to the database.`); }
+  catch (e) { showToast(esc(e.message)); }
+  clRender();
+});
+$('clSaveNow').addEventListener('click', async () => {
+  if (!CL.id) { $('clSaveNew').click(); return; }
+  clearTimeout(CL.timer);
+  try { await clWrite(CL.id, st.name); showToast('Saved to the database.'); } catch (e) { showToast(esc(e.message)); }
+  clRender();
+});
+$('clReload').addEventListener('click', () => clList());
+$('clAuto').addEventListener('change', () => { try { localStorage.setItem('ap-radius-cloud-auto', $('clAuto').checked ? '1' : '0'); } catch (e) { /* ignore */ } clRender(); });
+try { if (localStorage.getItem('ap-radius-cloud-auto') === '0') $('clAuto').checked = false; } catch (e) { /* ignore */ }
+$('clList').addEventListener('click', async e => {
+  const b = e.target.closest('[data-cl]'), tr = e.target.closest('[data-id]'); if (!b || !tr) return;
+  const db = clDB(), id = tr.dataset.id, r = CL.rows.find(x => x.id === id); if (!r) return;
+  if (b.dataset.cl === 'del') {
+    if (!confirm(`Delete the saved layout “${r.name}” from the database for everyone? The map on screen is not changed.`)) return;
+    try { await db.remove('radius_layouts', id); CL.rows = CL.rows.filter(x => x.id !== id); if (CL.id === id) clSetId(null); showToast('Deleted.'); } catch (err) { showToast(esc(err.message)); }
+    clRender(); return;
+  }
+  if (!CL.id && !confirm(`The layout on screen is not saved in the database and will be replaced. Open “${r.name}” anyway? (To keep it, press Cancel and use “Save as new layout” first.)`)) return;
+  try {
+    clearTimeout(CL.timer);
+    if (CL.id && $('clAuto').checked) await clWrite(CL.id, st.name);
+    const rows = await db.list('radius_layouts'), full = rows.find(x => x.id === id);
+    if (!full || !full.data) { showToast('That layout could not be read.'); return; }
+    clSetId(null);
+    if (applyLoaded(full.data, 'Opening saved layout “%s”')) {
+      if (full.data.view) { view = { ...DEF_VIEW, ...full.data.view, baseline: view.baseline, tab: view.tab }; view = sanitizeView(view); setBasemap(); syncControls(); }
+      st.name = full.name; $('scName').value = st.name; save(); clSetId(id); CL.msg = `Opened ${clTime(full.updated_at)}.`;
+      undoStack = []; redoStack = []; updateUndo();
+    }
+  } catch (err) { showToast(esc(err.message)); }
+  clRender();
+});
+
+/* =========================================================
    Init
    ========================================================= */
 load();
@@ -3903,6 +4201,7 @@ updateUndo();
 showTab(view.tab && document.querySelector(`.tab[data-tab="${view.tab}"]`) ? view.tab : 'over');
 openSharedFromHash();
 gLoadConfig();
+clInit();
 window.addEventListener('resize', () => map.invalidateSize());
 window.__fp = { st: () => st, metrics: () => metrics };   // for diagnostics
 })();

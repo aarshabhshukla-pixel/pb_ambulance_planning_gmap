@@ -1,7 +1,7 @@
 // Ambulance Planner – service worker
 // Caches the app itself so it opens instantly and works offline.
 // Map tiles and place search always come from the network (they are not cached).
-const VERSION = 'ambulance-planner-v7';
+const VERSION = 'ambulance-planner-v9';
 const SHELL = [
   './',
   'index.html',
@@ -41,8 +41,8 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // tiles, search: network only
   if (url.pathname.startsWith('/api/')) return;      // server functions: never cache
-  if (url.pathname.endsWith('/config.js')) {          // settings: always the latest, cached copy only when offline
-    e.respondWith(fetch(req).then(res => { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); return res; }).catch(() => caches.match(req)));
+  if (/\.(js|html|css)$/.test(url.pathname)) {        // code and settings: always the latest, cached copy only when offline
+    e.respondWith(fetch(req).then(res => { if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); } return res; }).catch(() => caches.match(req)));
     return;
   }
 
