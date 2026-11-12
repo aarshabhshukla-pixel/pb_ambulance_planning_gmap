@@ -56,7 +56,7 @@ Security model:
 - **Hover** any stop for arrival, halt, departure, distance and speed from the previous stop, next stop, population and nearest hospital; hover a road for that leg’s times.
 - **Import routes (Excel template)**: sheets *Routes* and *Stops*; location as lat, lng, a Google Maps link or a place name. A route with the same name is replaced. Roads are measured on import. *Download all routes* gives the same format.
 - **Optimise order** (first stop fixed, optionally last), **Reverse**, **Print this route**.
-- **Map & scenario**: base maps (streets, satellite with roads, light grey, OpenStreetMap), toggles for hospitals, circles and stop names, and a *scenario file* (JSON backup of all data) to save or load.
+- **Map & scenario** (same layout as Radius coverage): base maps (same list, with automatic fallback), overlay (response-time heatmap from the nearest stop, hexagon grid, population density), coverage shape per route (circle or hexagon), Show routes, toggles, Share on WhatsApp, Copy share link (opens the route for any signed-in admin), PDF report, Export stops (CSV), Save / Load scenario and Reset map to default.
 - Deployment editor warns when the route ends after the shift.
 - Team page: “Open the remaining stops in Google Maps” (up to 10 at a time).
 

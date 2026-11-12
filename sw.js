@@ -1,7 +1,7 @@
 // Ambulance Planner – service worker
 // Caches the app itself so it opens instantly and works offline.
 // Map tiles and place search always come from the network (they are not cached).
-const VERSION = 'ambulance-planner-v9';
+const VERSION = 'ambulance-planner-v10';
 const SHELL = [
   './',
   'index.html',

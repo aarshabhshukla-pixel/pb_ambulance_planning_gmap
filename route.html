@@ -191,6 +191,18 @@ table.t input,table.t select{padding:4px 6px;font-size:12.5px}
 .mtools button{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:9px;border:1px solid var(--line2);background:var(--surface);box-shadow:var(--shadow);cursor:pointer;font-weight:650;font-size:12.5px}
 .mtools button.on{background:var(--brand);border-color:var(--brand);color:#fff}
 .mview{display:flex;gap:6px;align-items:center}
+.msc{display:grid;gap:10px;margin-bottom:10px}
+.chk{display:flex;align-items:center;gap:7px;margin:6px 0;font-weight:600;color:var(--ink)}
+.chk input{accent-color:var(--brand);width:16px;height:16px}
+[hidden]{display:none!important}
+.btns2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.btns2 .btn{white-space:normal;text-align:center;min-height:40px}
+.btn.full{width:100%}
+.mbanner{position:absolute;z-index:900;left:12px;bottom:28px;background:var(--surface);border-left:4px solid var(--brand);padding:8px 12px;border-radius:8px;box-shadow:var(--shadow);font-weight:600;font-size:13px;max-width:min(420px,calc(100% - 24px));display:none}
+.mbanner.show{display:block}
+.ovlegend{margin-top:6px;border-top:1px solid var(--line);padding-top:6px}
+.ovlegend .lg{display:flex;align-items:center;gap:6px;margin:2px 0}
+.ovlegend .sw{width:14px;height:12px;border-radius:3px;display:inline-block}
 .mview .seg{background:var(--surface);box-shadow:var(--shadow)}
 .mview .seg button{padding:6px 9px;font-size:12px;border:0;border-radius:0;box-shadow:none}
 .mview .seg button.on{background:var(--navy);color:#fff}
@@ -375,21 +387,31 @@ table.t input,table.t select{padding:4px 6px;font-size:12.5px}
           </div>
           <div class="card">
             <h3><svg class="i"><use href="#i-plan"/></svg>Map &amp; scenario</h3>
-            <div class="grid2">
+            <div class="msc">
               <label class="f">Base map<select id="baseSel"></select></label>
+              <label class="f">Overlay<select id="ovSel">
+                <option value="off">None</option>
+                <option value="time">Response-time heatmap (nearest stop → call)</option>
+                <option value="hex">Hexagon grid (response time per hexagon)</option>
+                <option value="pop">Population density (needs population grid)</option>
+              </select></label>
+              <label class="f" id="hexKmF" hidden>Hexagon size<select id="hexKm"><option value="0.5">0.5 km wide</option><option value="1">1 km wide</option><option value="2">2 km wide</option><option value="3">3 km wide</option></select></label>
+              <label class="f">Coverage shape<select id="shapeSel"><option value="circle">Circle (radius)</option><option value="hex">Hexagon (corners at the radius)</option></select></label>
               <label class="f">Show routes<select id="viewSel"><option value="one">This route only</option><option value="all">All routes together</option><option value="amb">One ambulance’s routes</option></select></label>
             </div>
-            <div class="row" style="margin-top:8px;gap:14px">
-              <label class="hint"><input type="checkbox" id="shPlaces" checked> Hospitals &amp; bases</label>
-              <label class="hint"><input type="checkbox" id="shCirc" checked> Coverage circles</label>
-              <label class="hint"><input type="checkbox" id="shLabels"> Stop names on map</label>
+            <label class="hint chk"><input type="checkbox" id="shCirc" checked> Show coverage areas around stops</label>
+            <label class="hint chk"><input type="checkbox" id="shPlaces" checked> Show hospitals &amp; bases</label>
+            <label class="hint chk"><input type="checkbox" id="shLabels"> Show stop names and times on map</label>
+            <div class="btns2">
+              <button class="btn" id="waBtn" style="background:#16a34a;border-color:#16a34a;color:#fff"><svg class="i"><use href="#i-wa"/></svg>Share on WhatsApp</button>
+              <button class="btn" id="linkBtn"><svg class="i"><use href="#i-link"/></svg>Copy share link</button>
+              <button class="btn" id="routePrint"><svg class="i"><use href="#i-pdf"/></svg>PDF report</button>
+              <button class="btn" id="csvBtn"><svg class="i"><use href="#i-csv"/></svg>Export stops (CSV)</button>
+              <button class="btn" id="bkSave"><svg class="i"><use href="#i-save"/></svg>Save scenario</button>
+              <label class="btn" style="cursor:pointer"><svg class="i"><use href="#i-open"/></svg>Load scenario<input type="file" id="bkLoad" accept=".json" hidden></label>
             </div>
-            <div class="row" style="margin-top:10px">
-              <button class="btn sm" id="bkSave"><svg class="i"><use href="#i-save"/></svg>Save scenario file</button>
-              <label class="btn sm" style="cursor:pointer">Load scenario file<input type="file" id="bkLoad" accept=".json" hidden></label>
-              <button class="btn sm" id="routePrint">Print this route</button>
-            </div>
-            <p class="note">A scenario file holds everything: ambulances, staff, hospitals &amp; bases, routes, deployments and the saved Radius coverage layouts. Use it as a backup or to move data between browsers.</p>
+            <button class="btn full" id="mapReset" style="margin-top:8px">Reset map to default</button>
+            <p class="note">Coverage shape is saved with each route. Map settings are remembered in this browser. Share links carry the open route (stops and settings) and open for any signed-in admin. PDF report opens the print dialog; choose “Save as PDF”. Save scenario keeps everything (ambulances, staff, hospitals &amp; bases, routes, deployments and saved Radius layouts) in one file. If the map shows a warning instead of streets, pick another base map.</p>
           </div>
         </div>
         <div class="mapbox">
@@ -403,6 +425,7 @@ table.t input,table.t select{padding:4px 6px;font-size:12.5px}
             <div class="mview"><div class="seg" id="viewSeg"><button data-v="one" class="on">This route</button><button data-v="all">All routes</button><button data-v="amb">By ambulance</button></div><select id="viewAmb"></select></div>
           </div>
           <div class="mlegend" id="mLegend"></div>
+          <div class="mbanner" id="mBanner"></div>
           <div class="mstatus" id="rStatus"></div>
         </div>
       </div>

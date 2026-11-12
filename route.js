@@ -39,7 +39,7 @@ function parseLatLng(str) {
 function setTheme(t) { document.documentElement.dataset.theme = t; try { localStorage.setItem('ap-route-theme', t); } catch (e) {} $('themeBtn').innerHTML = `<svg class="i"><use href="#i-${t === 'dark' ? 'sun' : 'moon'}"/></svg>`; }
 let th = null; try { th = localStorage.getItem('ap-route-theme'); } catch (e) {}
 setTheme(th || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-$('themeBtn').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+$('themeBtn').addEventListener('click', () => { setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'); if (typeof MP !== 'undefined' && MP.base === 'auto') setBase(); });
 
 /* ---------------- tabs ---------------- */
 function showTab(t) {
@@ -147,11 +147,12 @@ function normRoute(r) {
   d.engine = ENGINES[d.engine] ? d.engine : (firstEngine() || 'ors'); d.time_src = d.time_src === 'engine' ? 'engine' : 'speed';
   d.stops = Array.isArray(d.stops) ? d.stops.filter(s => s && isFinite(+s.lat) && isFinite(+s.lng)).map(s => ({ id: s.id || DB.uuid(), ...s, lat: +s.lat, lng: +s.lng })) : [];
   d.legs = d.legs && typeof d.legs === 'object' ? d.legs : {};
+  d.shape = d.shape === 'hex' ? 'hex' : 'circle';
   return r;
 }
 function legOf(r, a, b) { const k = legKey(engTag(r.data), a, b); return LEG.get(k) || r.data.legs[k] || null; }
 const fixDay = (hm, ref) => { if (ref == null) return hm; return hm + 1440 * Math.round((ref - hm) / 1440); };
-function popOf(s, R) { if (s.pop_src === 'Grid') return S.grid ? gridSum([[s.lat, s.lng, num(s.radius) || R]], null) : null; return num(s.pop); }
+function popOf(s, R, shape) { if (s.pop_src === 'Grid') return S.grid ? gridSum([[s.lat, s.lng, num(s.radius) || R, shape]], null) : null; return num(s.pop); }
 function schedule(r, startMin, noOverride) {
   const d = r.data, rows = []; let prev = null, incomplete = false, pending = false;
   if (startMin == null) startMin = hm2min(d.start_time) ?? 480;
@@ -170,7 +171,7 @@ function schedule(r, startMin, noOverride) {
     const halt = num(s.halt) ?? d.halt;
     let dep = arr != null ? arr + halt : null; const doo = noOverride ? null : hm2min(s.dep_ov);
     if (doo != null && arr != null) { dep = fixDay(doo, arr + halt); if (dep < arr) dep += 1440; }
-    rows.push({ i, s, leg, speed, travel, arrC, arr, dep, halt: arr != null && dep != null ? dep - arr : halt, arrOv: ao != null, depOv: doo != null, pop: popOf(s, d.radius) });
+    rows.push({ i, s, leg, speed, travel, arrC, arr, dep, halt: arr != null && dep != null ? dep - arr : halt, arrOv: ao != null, depOv: doo != null, pop: popOf(s, d.radius, d.shape) });
     prev = dep;
   });
   const base = noOverride ? null : schedule(r, startMin, true).rows;
@@ -186,10 +187,13 @@ function schedule(r, startMin, noOverride) {
 }
 /* population: sum, overlaps, unique (only with a grid), area */
 function popCoverage(r, rows) {
-  const d = r.data, circ = d.stops.map(s => [s.lat, s.lng, num(s.radius) || d.radius]);
+  const d = r.data, circ = d.stops.map(s => [s.lat, s.lng, num(s.radius) || d.radius, s._shape || (d.shape === 'hex' ? 'hex' : 'circle')]);
   const sum = rows.reduce((t, x) => t + (x.pop || 0), 0), withPop = rows.filter(x => x.pop != null).length;
   const overlaps = [];
-  for (let i = 0; i < circ.length; i++) for (let j = i + 1; j < circ.length; j++) if (haversine(circ[i], circ[j]) < circ[i][2] + circ[j][2] - 0.01) overlaps.push([i, j]);
+  for (let i = 0; i < circ.length; i++) for (let j = i + 1; j < circ.length; j++) {
+    const a = circ[i], b = circ[j], hx = a[3] === 'hex' && b[3] === 'hex';
+    if (hx ? inHex((b[1] - a[1]) * kxAt(a[0]), (b[0] - a[0]) * KY, (a[2] + b[2]) * 0.999) : haversine(a, b) < a[2] + b[2] - 0.01) overlaps.push([i, j]);
+  }
   let unique = null, uniqueBy = null;
   if (S.grid && circ.length) { uniqueBy = []; unique = gridSum(circ, uniqueBy); }
   let area = 0;
@@ -198,7 +202,7 @@ function popCoverage(r, rows) {
     const kx = 111.32 * Math.cos(la[0] * Math.PI / 180), ky = 110.57;
     const x0 = Math.min(...lo) - R / kx, x1 = Math.max(...lo) + R / kx, y0 = Math.min(...la) - R / ky, y1 = Math.max(...la) + R / ky;
     const n = 140, dx = (x1 - x0) / n, dy = (y1 - y0) / n; let hit = 0;
-    for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) { const p = [y0 + (a + .5) * dy, x0 + (b + .5) * dx]; if (circ.some(c => Math.hypot((p[0] - c[0]) * ky, (p[1] - c[1]) * kx) <= c[2])) hit++; }
+    for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) { const p = [y0 + (a + .5) * dy, x0 + (b + .5) * dx]; if (circ.some(c => inArea(c, p[0], p[1]))) hit++; }
     area = hit * dx * kx * dy * ky;
   }
   const best = unique != null ? unique : (withPop ? sum : null);
@@ -213,7 +217,7 @@ function gridSum(circles, perCircle) {
     let mine = 0; const r = c[2] || 0, dLa = r / 110.57, dLo = r / (111.32 * Math.cos(c[0] * Math.PI / 180));
     for (let a = Math.floor((c[0] - dLa) * 100); a <= Math.floor((c[0] + dLa) * 100); a++) for (let b = Math.floor((c[1] - dLo) * 100); b <= Math.floor((c[1] + dLo) * 100); b++) {
       const cell = S.gridIdx.get(`${a}|${b}`); if (!cell) continue;
-      cell.forEach(p => { if (haversine(c, p) <= r) { if (!seen.has(p)) { seen.add(p); mine += p[2]; tot += p[2]; } } });
+      cell.forEach(p => { if (inArea([c[0], c[1], r, c[3]], p[0], p[1])) { if (!seen.has(p)) { seen.add(p); mine += p[2]; tot += p[2]; } } });
     }
     if (perCircle) perCircle[ci] = mine;
   });
@@ -238,8 +242,8 @@ function fitRoute() { const st = S.route && S.route.data.stops; if (st && st.len
 rmap.on('click', e => { if (placeMode) { openPlace(null, { lat: e.latlng.lat, lng: e.latlng.lng }); return; } if (!addMode || !S.route) return; addStop(e.latlng.lat, e.latlng.lng, null); });
 function drawRoute() {
   rG.line.clearLayers(); rG.circ.clearLayers(); rG.pins.clearLayers();
-  if (S.view !== 'one') { drawMany(); return; }
-  $('mLegend').classList.remove('show');
+  if (S.view !== 'one') { drawMany(); drawOverlay(); const lg = $('mLegend'); if (lg.classList.contains('show')) lg.insertAdjacentHTML('beforeend', ovLegend()); return; }
+  drawOverlay(); { const lg = $('mLegend'), ol = ovLegend(); lg.innerHTML = ol; lg.classList.toggle('show', !!ol); }
   const r = S.route; if (!r) return;
   const d = r.data, sc = schedule(r);
   d.stops.forEach((s, i) => {
@@ -248,7 +252,7 @@ function drawRoute() {
       if (lg && lg.geom && lg.geom.length > 1) L.polyline(lg.geom, { color: '#2563eb', weight: 5, opacity: .85 }).bindTooltip(() => legTip(r, sc, i), { sticky: true }).addTo(rG.line);
       else L.polyline([[d.stops[i - 1].lat, d.stops[i - 1].lng], [s.lat, s.lng]], { color: lg && lg.err ? '#dc2626' : '#94a3b8', weight: 2, dashArray: '4 8', opacity: .9 }).bindTooltip(lg && lg.err ? 'No road route: ' + esc(lg.err) : 'Waiting for road route').addTo(rG.line);
     }
-    if (showCirc) { const rad = (num(s.radius) || d.radius) * 1000, ov = sc.tot.overlaps.some(p => p.includes(i)); L.circle([s.lat, s.lng], { radius: rad, color: ov ? '#d97706' : '#e11d48', weight: 1.2, fillOpacity: .06, interactive: false }).addTo(rG.circ); }
+    if (showCirc) { const ov = sc.tot.overlaps.some(p => p.includes(i)); covLayer(r, s, num(s.radius) || d.radius, { color: ov ? '#d97706' : '#e11d48', weight: 1.2, fillOpacity: .06, interactive: false }).addTo(rG.circ); }
     const row = sc.rows[i];
     const m = L.marker([s.lat, s.lng], { draggable: true, icon: pinIcon(i + 1, i === 0 ? 'first' : ''), zIndexOffset: 500 }).addTo(rG.pins);
     m.bindTooltip(() => stopTip(r, sc, i), { direction: 'top', offset: [0, -28] });
@@ -314,6 +318,7 @@ function renderEngineSel() {
 }
 function loadRouteToForm() {
   const r = S.route, d = r.data;
+  $('shapeSel').value = d.shape === 'hex' ? 'hex' : 'circle';
   $('rName').value = r.name || ''; $('rStart').value = d.start_time; $('rSpeed').value = d.speed; $('rHalt').value = d.halt; $('rRadius').value = d.radius; $('rTimeSrc').value = d.time_src;
   renderEngineSel(); renderRouteSel(); clearDirty(); if (S.route._new) markDirty();
 }
@@ -1147,25 +1152,158 @@ $('adminList').addEventListener('click', async e => {
 /* =========================================================
    Base maps (both maps), layer toggles
    ========================================================= */
-const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+/* =========================================================
+   Map & scenario: base maps (same list as Radius coverage), overlays, coverage shape
+   ========================================================= */
+const AS = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+const ESRI_O = { maxZoom: 19, attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, USGS, &copy; OpenStreetMap contributors' };
+const ESRI_CO = { maxZoom: 19, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors' };
+const OSM_O = { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' };
 const BASEMAPS = {
-  street: { name: 'Streets', layers: () => [L.tileLayer(ESRI + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors' })] },
-  sat: { name: 'Satellite with roads & names', layers: () => [L.tileLayer(ESRI + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' }), L.tileLayer(ESRI + 'Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: .9 }), L.tileLayer(ESRI + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })] },
-  grey: { name: 'Light grey (routes stand out)', layers: () => [L.tileLayer(ESRI + 'Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, maxNativeZoom: 16, attribution: 'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors' }), L.tileLayer(ESRI + 'Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 16 })] },
-  osm: { name: 'OpenStreetMap', layers: () => [L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' })] }
+  auto:       { label: 'Auto (Esri streets; dark grey in dark mode)' },
+  esriStreet: { label: 'Streets – Esri', url: AS + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}', o: ESRI_O },
+  esriLight:  { label: 'Light grey – Esri', url: AS + 'Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', labels: AS + 'Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', o: ESRI_CO },
+  esriDark:   { label: 'Dark grey – Esri', url: AS + 'Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', labels: AS + 'Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', o: ESRI_CO },
+  hybrid:     { label: 'Satellite with labels – Esri', url: AS + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', roads: AS + 'Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', labels: AS + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', o: { maxZoom: 19, attribution: 'Tiles &copy; Esri &mdash; Esri, Maxar, Earthstar Geographics' } },
+  esriTopo:   { label: 'Topographic – Esri', url: AS + 'World_Topo_Map/MapServer/tile/{z}/{y}/{x}', o: ESRI_O },
+  osmHot:     { label: 'OSM Humanitarian (community server)', url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', o: { ...OSM_O, subdomains: 'abc', attribution: OSM_O.attribution + ', tiles OSM France' } },
+  osmDe:      { label: 'OSM Germany style (community server)', url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png', o: { ...OSM_O, attribution: OSM_O.attribution + ', tiles OSM Germany' } },
+  osm:        { label: 'OpenStreetMap standard (website hosting only)', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', o: OSM_O }
 };
+const FALLBACK = { esriStreet: 'osmHot', esriLight: 'esriStreet', esriDark: 'esriStreet', hybrid: 'esriStreet', esriTopo: 'esriStreet', osmHot: 'esriStreet', osmDe: 'esriStreet', osm: 'esriStreet' };
+const OLD_BASE = { street: 'esriStreet', sat: 'hybrid', grey: 'esriLight' };
+const MAPDEF = { base: 'auto', ov: 'off', hexKm: 1, circ: true, places: true, labels: false };
+let MP = { ...MAPDEF };
+try { const o = JSON.parse(localStorage.getItem('ap-route-map') || 'null'); if (o) MP = { ...MAPDEF, ...o }; else { const b = localStorage.getItem('ap-route-base'); if (b) MP.base = OLD_BASE[b] || b; } } catch (e) { /* defaults */ }
+if (!BASEMAPS[MP.base]) MP.base = 'auto';
+if (!['off', 'time', 'hex', 'pop'].includes(MP.ov)) MP.ov = 'off';
+if (![0.5, 1, 2, 3].includes(+MP.hexKm)) MP.hexKm = 1;
+function saveMP() { try { localStorage.setItem('ap-route-map', JSON.stringify(MP)); } catch (e) { /* ignore */ } }
 const baseOn = { r: [], l: [] };
-function setBase(k) {
-  if (!BASEMAPS[k]) k = 'street';
-  [['r', rmap], ['l', lmap]].forEach(([n, m]) => { baseOn[n].forEach(t => m.removeLayer(t)); baseOn[n] = BASEMAPS[k].layers(); baseOn[n].forEach(t => t.addTo(m).bringToBack()); });
-  $('baseSel').value = k; try { localStorage.setItem('ap-route-base', k); } catch (e) {}
+let baseKey = null, tileErr = 0, bannerT = 0;
+function banner(msg) { const b = $('mBanner'); b.innerHTML = msg; b.classList.add('show'); clearTimeout(bannerT); bannerT = setTimeout(() => b.classList.remove('show'), 7000); }
+const resolveBase = () => MP.base !== 'auto' ? MP.base : document.documentElement.dataset.theme === 'dark' ? 'esriDark' : 'esriStreet';
+function setBase(k, fromFallback) {
+  if (k) MP.base = BASEMAPS[k] ? k : 'auto';
+  const key = fromFallback || resolveBase(), b = BASEMAPS[key]; baseKey = key; tileErr = 0;
+  [['r', rmap], ['l', lmap]].forEach(([n, m]) => {
+    baseOn[n].forEach(t => m.removeLayer(t));
+    const ls = [L.tileLayer(b.url, b.o)]; if (b.roads) ls.push(L.tileLayer(b.roads, { maxZoom: 19, opacity: .9 })); if (b.labels) ls.push(L.tileLayer(b.labels, { maxZoom: 19, maxNativeZoom: b.o.maxNativeZoom || 19 }));
+    if (n === 'r') ls[0].on('tileerror', () => { if (++tileErr === 6 && baseKey === key && FALLBACK[key]) { const f = FALLBACK[key]; banner(`${esc(BASEMAPS[key].label)} did not load here, switched to ${esc(BASEMAPS[f].label)}.`); setBase(null, f); } });
+    baseOn[n] = ls; ls.forEach(t => t.addTo(m).bringToBack());
+  });
+  $('baseSel').value = MP.base; saveMP();
 }
-$('baseSel').innerHTML = Object.entries(BASEMAPS).map(([k, b]) => opt(k, b.name)).join('');
+$('baseSel').innerHTML = Object.entries(BASEMAPS).map(([k, b]) => opt(k, b.label)).join('');
 $('baseSel').addEventListener('change', e => setBase(e.target.value));
-{ let b = 'street'; try { b = localStorage.getItem('ap-route-base') || 'street'; } catch (e) {} setBase(b); }
-$('shCirc').addEventListener('change', e => { showCirc = e.target.checked; $('circBtn').classList.toggle('on', showCirc); drawRoute(); });
-$('shLabels').addEventListener('change', () => drawRoute());
-$('shPlaces').addEventListener('change', () => drawPlaces());
+setBase(MP.base);
+showCirc = MP.circ; $('shCirc').checked = MP.circ; $('circBtn').classList.toggle('on', showCirc); $('shPlaces').checked = MP.places; $('shLabels').checked = MP.labels;
+$('ovSel').value = MP.ov; $('hexKm').value = String(MP.hexKm); $('hexKmF').hidden = MP.ov !== 'hex';
+$('shCirc').addEventListener('change', e => { showCirc = MP.circ = e.target.checked; $('circBtn').classList.toggle('on', showCirc); saveMP(); drawRoute(); });
+$('circBtn').addEventListener('click', () => { MP.circ = showCirc; saveMP(); });
+$('shLabels').addEventListener('change', e => { MP.labels = e.target.checked; saveMP(); drawRoute(); });
+$('shPlaces').addEventListener('change', e => { MP.places = e.target.checked; saveMP(); drawPlaces(); });
+$('ovSel').addEventListener('change', e => {
+  let v = e.target.value;
+  if (v === 'pop' && !(S.grid && S.grid.length)) { toast('Load a population grid first (Settings → Population grid).', true); v = 'off'; e.target.value = 'off'; }
+  MP.ov = v; $('hexKmF').hidden = v !== 'hex'; saveMP(); drawRoute();
+});
+$('hexKm').addEventListener('change', e => { MP.hexKm = +e.target.value; saveMP(); drawRoute(); });
+$('shapeSel').addEventListener('change', e => {
+  if (!S.route) return; S.route.data.shape = e.target.value === 'hex' ? 'hex' : 'circle'; markDirty(); renderRoute(true);
+  toast(`Coverage shape: ${S.route.data.shape === 'hex' ? 'hexagon' : 'circle'} for this route. Save the route to keep it.`);
+});
+$('mapReset').addEventListener('click', () => {
+  if (!confirm('Reset the map settings (base map, overlay, toggles, view) to default? Routes and data are not changed.')) return;
+  MP = { ...MAPDEF }; saveMP(); setBase('auto'); showCirc = true; $('shCirc').checked = true; $('circBtn').classList.toggle('on', true); $('shPlaces').checked = true; $('shLabels').checked = false;
+  $('ovSel').value = 'off'; $('hexKm').value = '1'; $('hexKmF').hidden = true; drawPlaces(); setView('one');
+});
+
+/* coverage area of a stop: circle of radius r, or flat-top hexagon with corners r km from the stop */
+const R32 = Math.sqrt(3) / 2, ROADF = 1.3, BANDS = [5, 10, 15, 20], TC = [[34, 197, 94], [132, 204, 22], [234, 179, 8], [249, 115, 22], [239, 68, 68]];
+const inHex = (dx, dy, r) => { const ax = Math.abs(dx), ay = Math.abs(dy); return ay <= R32 * r && R32 * ax + 0.5 * ay <= R32 * r; };
+const KY = 110.57, kxAt = lat => 111.32 * Math.cos(lat * Math.PI / 180);
+function inArea(c, lat, lng) { const dx = (lng - c[1]) * kxAt(c[0]), dy = (lat - c[0]) * KY; return c[3] === 'hex' ? inHex(dx, dy, c[2]) : dx * dx + dy * dy <= c[2] * c[2]; }
+const shapeOf = r => (r && r.data && r.data.shape === 'hex' ? 'hex' : 'circle');
+function hexPts(lat, lng, r) { const kx = kxAt(lat); return [0, 1, 2, 3, 4, 5].map(k => [lat + r * Math.sin(k * Math.PI / 3) / KY, lng + r * Math.cos(k * Math.PI / 3) / kx]); }
+function covLayer(r, s, R, o) { return shapeOf(r) === 'hex' ? L.polygon(hexPts(s.lat, s.lng, R), o) : L.circle([s.lat, s.lng], { radius: R * 1000, ...o }); }
+const band = t => t <= BANDS[0] ? 0 : t <= BANDS[1] ? 1 : t <= BANDS[2] ? 2 : t <= BANDS[3] ? 3 : 4;
+
+/* overlays: response time from the nearest stop, hexagon grid, population density */
+rmap.createPane('ovl'); rmap.getPane('ovl').style.zIndex = 350;
+const ovG = L.layerGroup().addTo(rmap), ovR = L.canvas({ pane: 'ovl', padding: .3 });
+function ovStops() {
+  const list = S.view === 'one' ? (S.route ? [{ r: S.route, start: null }] : []) : manyItems();
+  const out = [];
+  list.forEach(it => { const r = it.r, d = r.data, sc = it.sc || schedule(r, it.start); d.stops.forEach((s, i) => out.push({ lat: s.lat, lng: s.lng, R: num(s.radius) || d.radius, shape: shapeOf(r), spd: d.speed || 30, r, i, row: sc.rows[i] })); });
+  return out;
+}
+function nearestStop(P, lat, lng) {
+  let best = Infinity, bi = -1, bkm = 0, cnt = 0; const kx = kxAt(lat);
+  for (let j = 0; j < P.length; j++) {
+    const p = P[j], dx = (lng - p.lng) * kx, dy = (lat - p.lat) * KY, km = Math.hypot(dx, dy), t = km * ROADF / p.spd * 60;
+    if (t < best) { best = t; bi = j; bkm = km; }
+    if (p.shape === 'hex' ? inHex(dx, dy, p.R) : km <= p.R) cnt++;
+  }
+  return { t: best, j: bi, km: bkm, cnt };
+}
+function ovBox(P) {
+  const m = Math.max(...P.map(p => p.R)) + 3, la = P.map(p => p.lat), lo = P.map(p => p.lng), lat0 = (Math.min(...la) + Math.max(...la)) / 2, kx = kxAt(lat0);
+  return { s: Math.min(...la) - m / KY, n: Math.max(...la) + m / KY, w: Math.min(...lo) - m / kx, e: Math.max(...lo) + m / kx, lat0, kx };
+}
+let ovSum = null;
+function drawOverlay() {
+  ovG.clearLayers(); ovSum = null;
+  if (MP.ov === 'off') return;
+  const P = ovStops(); if (!P.length) return;
+  const B = ovBox(P);
+  if (MP.ov === 'time' || MP.ov === 'pop') {
+    const nx = 200, ny = Math.max(40, Math.round(nx * ((B.n - B.s) * KY) / ((B.e - B.w) * B.kx))), cv = document.createElement('canvas'); cv.width = nx; cv.height = ny;
+    const g = cv.getContext('2d'), img = g.createImageData(nx, ny);
+    if (MP.ov === 'time') {
+      const cnt = [0, 0, 0, 0, 0];
+      for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+        const lat = B.n - (y + .5) * (B.n - B.s) / ny, lng = B.w + (x + .5) * (B.e - B.w) / nx, q = nearestStop(P, lat, lng), b = band(q.t), c = TC[b], k = (y * nx + x) * 4;
+        cnt[b]++; img.data[k] = c[0]; img.data[k + 1] = c[1]; img.data[k + 2] = c[2]; img.data[k + 3] = q.cnt ? 130 : 80;
+      }
+      ovSum = { kind: 'time', cnt };
+    } else {
+      const acc = new Float64Array(nx * ny); let mx = 0;
+      S.grid.forEach(p => { if (p[0] < B.s || p[0] > B.n || p[1] < B.w || p[1] > B.e) return; const x = Math.floor((p[1] - B.w) / (B.e - B.w) * nx), y = Math.floor((B.n - p[0]) / (B.n - B.s) * ny), k = y * nx + x; acc[k] += p[2]; if (acc[k] > mx) mx = acc[k]; });
+      for (let k = 0; k < acc.length; k++) { if (!acc[k]) continue; const f = Math.log1p(acc[k]) / Math.log1p(mx); img.data[k * 4] = 109; img.data[k * 4 + 1] = 40; img.data[k * 4 + 2] = 217; img.data[k * 4 + 3] = Math.round(40 + 170 * f); }
+      ovSum = { kind: 'pop', max: mx };
+    }
+    g.putImageData(img, 0, 0);
+    L.imageOverlay(cv.toDataURL(), [[B.s, B.w], [B.n, B.e]], { pane: 'ovl', opacity: .75, interactive: false, className: 'pix' }).addTo(ovG);
+    return;
+  }
+  /* hexagon grid in local km around the box centre */
+  const S3 = Math.sqrt(3), lng0 = (B.w + B.e) / 2, W = (B.e - B.w) * B.kx, Hh = (B.n - B.s) * KY;
+  let w = MP.hexKm, a = w / S3; while ((W * Hh) / (1.5 * S3 * a * a) > 5000) { w *= 2; a = w / S3; }
+  const toLL = (x, y) => [B.lat0 + y / KY, lng0 + x / B.kx];
+  const key = (x, y) => { const q = (2 / 3 * x) / a, r = (-x / 3 + S3 / 3 * y) / a, cz = -q - r; let rq = Math.round(q), rr = Math.round(r); const rz = Math.round(cz), dq = Math.abs(rq - q), dr = Math.abs(rr - r), dz = Math.abs(rz - cz); if (dq > dr && dq > dz) rq = -rr - rz; else if (dr > dz) rr = -rq - rz; return rq + ',' + rr; };
+  const pop = new Map(); if (S.grid) S.grid.forEach(p => { if (p[0] < B.s || p[0] > B.n || p[1] < B.w || p[1] > B.e) return; const k = key((p[1] - lng0) * B.kx, (p[0] - B.lat0) * KY); pop.set(k, (pop.get(k) || 0) + p[2]); });
+  const sum = { kind: 'hex', w, cnt: [0, 0, 0, 0, 0], pop: [0, 0, 0, 0, 0], unc: 0, uncPop: 0, grid: !!S.grid };
+  for (let q = Math.floor(-W / 2 / (1.5 * a)) - 1; q <= Math.ceil(W / 2 / (1.5 * a)) + 1; q++) {
+    for (let r = Math.floor(-Hh / 2 / (S3 * a) - q / 2) - 1; r <= Math.ceil(Hh / 2 / (S3 * a) - q / 2) + 1; r++) {
+      const cx = a * 1.5 * q, cy = a * S3 * (r + q / 2), [lat, lng] = toLL(cx, cy);
+      if (lat < B.s || lat > B.n || lng < B.w || lng > B.e) continue;
+      const nq = nearestStop(P, lat, lng), b = band(nq.t), c = TC[b], pp = pop.get(q + ',' + r) || 0, st = P[nq.j];
+      sum.cnt[b]++; sum.pop[b] += pp; if (!nq.cnt) { sum.unc++; sum.uncPop += pp; }
+      L.polygon([0, 1, 2, 3, 4, 5].map(k => toLL(cx + a * Math.cos(k * Math.PI / 3), cy + a * Math.sin(k * Math.PI / 3))), { renderer: ovR, color: '#ffffff', weight: .7, opacity: .8, fillColor: `rgb(${c})`, fillOpacity: nq.cnt ? .5 : .25 })
+        .bindTooltip(() => `<div class="tip"><b>${fmt(nq.t)} min</b> from the nearest stop (estimate)<br><span class="tl">Nearest:</span> ${esc(st.r.name || 'Route')} · stop ${st.i + 1} ${esc(st.r.data.stops[st.i].name || '')}<br><span class="tl">Ambulance there:</span> ${min2hm(st.row.arr)}–${min2hm(st.row.dep)} (halt ${st.row.halt != null ? Math.round(st.row.halt) : '–'} min)<br>${fmt(nq.km)} km straight line · ${nq.cnt ? `inside ${nq.cnt} coverage area${nq.cnt > 1 ? 's' : ''}` : 'outside every coverage area'}${S.grid ? `<br>Population ${fmtInt(pp)}` : ''}</div>`, { sticky: true })
+        .addTo(ovG);
+    }
+  }
+  ovSum = sum;
+}
+function ovLegend() {
+  if (!ovSum) return '';
+  const lab = [`≤ ${BANDS[0]} min`, `${BANDS[0]}–${BANDS[1]} min`, `${BANDS[1]}–${BANDS[2]} min`, `${BANDS[2]}–${BANDS[3]} min`, `> ${BANDS[3]} min`], hexSw = ';clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)';
+  if (ovSum.kind === 'pop') return `<div class="ovlegend"><b>Population density</b><div class="lg"><span class="sw" style="background:linear-gradient(90deg,rgba(109,40,217,.2),rgba(109,40,217,.85))"></span>low → high (darkest ≈ ${fmtInt(ovSum.max)} people per cell)</div></div>`;
+  if (ovSum.kind === 'time') { const n = ovSum.cnt.reduce((a, b) => a + b, 0) || 1; return `<div class="ovlegend"><b>Drive time from the nearest stop</b>${TC.map((c, i) => `<div class="lg"><span class="sw" style="background:rgba(${c},.7)"></span>${lab[i]} · ${fmt(ovSum.cnt[i] / n * 100, 0)}% of the area</div>`).join('')}<div class="note" style="margin:3px 0 0">Straight line × ${ROADF} at each route’s planned speed. Paler = outside every coverage area.</div></div>`; }
+  return `<div class="ovlegend"><b>Hexagons ${ovSum.w} km wide · drive time from the nearest stop</b>${TC.map((c, i) => `<div class="lg"><span class="sw" style="background:rgba(${c},.7)${hexSw}"></span>${lab[i]} · ${ovSum.cnt[i]}${ovSum.grid ? ` (${fmtInt(ovSum.pop[i])} people)` : ''}</div>`).join('')}<div class="lg">Outside every coverage area: ${ovSum.unc}${ovSum.grid ? ` (${fmtInt(ovSum.uncPop)} people)` : ''} · faded</div><div class="note" style="margin:3px 0 0">Hover a hexagon for the nearest stop and when the ambulance is there.</div></div>`;
+}
 
 /* =========================================================
    Hover details
@@ -1177,7 +1315,7 @@ function stopTip(r, sc, i) {
     <br>Arrive <b>${min2hm(x.arr)}${x.arr != null ? dayTag(x.arr) : ''}</b>${x.arrOv ? ' (fixed)' : ''} · Halt <b>${x.halt != null ? Math.round(x.halt) : '–'} min</b> · Depart <b>${min2hm(x.dep)}</b>${x.depOv ? ' (fixed)' : ''}
     ${i ? `<br><span class="tl">From ${esc(pv.s.name)}:</span> ${lg ? `${fmt(lg.km)} km · ${dur(x.travel)} at ${fmt(x.speed, 0)} km/h` : 'road route pending'}` : '<br><span class="tl">Start of route</span>'}
     <br><span class="tl">Next:</span> ${nx ? esc(nx.name) : 'last stop'}
-    <br><span class="tl">Coverage:</span> ${fmt(R)} km radius${x.pop != null ? ` · population ${fmtInt(x.pop)}` : ''}
+    <br><span class="tl">Coverage:</span> ${fmt(R)} km ${shapeOf(r) === 'hex' ? 'hexagon' : 'radius'}${x.pop != null ? ` · population ${fmtInt(x.pop)}` : ''}
     ${nh ? `<br><span class="tl">Nearest hospital:</span> ${esc(nh.p.name)} · ${fmt(nh.km)} km (straight line)` : ''}
     ${s.remarks ? `<br><i>${esc(s.remarks)}</i>` : ''}</div>`;
 }
@@ -1231,10 +1369,10 @@ function drawMany() {
         else L.polyline([[d.stops[i - 1].lat, d.stops[i - 1].lng], [s.lat, s.lng]], { color: col, weight: 2, dashArray: '4 8', opacity: .8 }).bindTooltip(() => legTip(r, sc, i), { sticky: true }).addTo(rG.line);
       }
       const R = num(s.radius) || d.radius;
-      if (showCirc) L.circle([s.lat, s.lng], { radius: R * 1000, color: col, weight: 1, fillColor: col, fillOpacity: .07, interactive: false }).addTo(rG.circ);
+      if (showCirc) covLayer(r, s, R, { color: col, weight: 1, fillColor: col, fillOpacity: .07, interactive: false }).addTo(rG.circ);
       L.marker([s.lat, s.lng], { icon: L.divIcon({ className: 'mk', iconSize: [20, 20], iconAnchor: [10, 10], html: `<div class="sdot" style="background:${col}">${i + 1}</div>` }) }).bindTooltip(() => stopTip(r, sc, i), { direction: 'top', offset: [0, -10] }).on('click', () => openRouteFromMap(r)).addTo(rG.pins);
       if ($('shLabels').checked) L.marker([s.lat, s.lng], { interactive: false, keyboard: false, icon: L.divIcon({ className: 'mk', iconSize: [0, 0], html: `<span class="slabel">${esc(`${s.name} · ${min2hm(sc.rows[i].arr)}`)}</span>` }) }).addTo(rG.pins);
-      all.push({ lat: s.lat, lng: s.lng, radius: R, pop: sc.rows[i].pop, pop_src: 'Manual', rt: n });
+      all.push({ lat: s.lat, lng: s.lng, radius: R, pop: sc.rows[i].pop, pop_src: 'Manual', rt: n, _shape: shapeOf(r) });
     });
   });
   let amb = null;
@@ -1401,9 +1539,9 @@ function bulkCheckPlaces() {
 /* =========================================================
    Route import / export (Excel template)
    ========================================================= */
-const RT_HEAD = ['Route name', 'Start time', 'Planned speed (km/h)', 'Default halt (min)', 'Coverage radius (km)', 'Road routing', 'Travel time from'];
+const RT_HEAD = ['Route name', 'Start time', 'Planned speed (km/h)', 'Default halt (min)', 'Coverage radius (km)', 'Road routing', 'Travel time from', 'Coverage shape'];
 const ST_HEAD = ['Route name', 'Stop no', 'Location name', 'Location (lat, lng / Maps link / place name)', 'Halt (min)', 'Speed to here (km/h)', 'Fixed arrival', 'Fixed departure', 'Population', 'Population source', 'Population updated', 'Coverage radius (km)', 'Remarks'];
-const RT_HDR = { name: /^(route|route name|name)$/, start: /^(start|start time)$/, speed: /^(planned speed|speed|avg speed|planned avg speed)$/, halt: /^(default halt|halt)$/, radius: /^(coverage radius|radius)$/, engine: /^(road routing|engine|routing)$/, time_src: /^(travel time from|time source)$/ };
+const RT_HDR = { name: /^(route|route name|name)$/, start: /^(start|start time)$/, speed: /^(planned speed|speed|avg speed|planned avg speed)$/, halt: /^(default halt|halt)$/, radius: /^(coverage radius|radius)$/, engine: /^(road routing|engine|routing)$/, time_src: /^(travel time from|time source)$/, shape: /^(coverage shape|shape)$/ };
 const ST_HDR = { route: /^(route|route name)$/, no: /^(stop no|stop|#|no|sequence|seq|order|stop number)$/, name: /^(location name|stop name|name|place|place name)$/, ll: /^(location|lat, ?lng|coordinates|maps link|google maps link)$/, lat: /^(lat|latitude)$/, lng: /^(lng|lon|long|longitude)$/, halt: /^(halt|halt time)$/, speed: /^(speed to here|speed)$/, arr_ov: /^(fixed arrival|arrival|arrival time)$/, dep_ov: /^(fixed departure|departure|departure time)$/, pop: /^(population)$/, pop_src: /^(population source)$/, pop_date: /^(population updated|population date)$/, radius: /^(coverage radius|radius)$/, remarks: /^(remarks|notes|instructions)$/ };
 const engineOf = v => { const t = String(v || '').toLowerCase(); return /tom/.test(t) ? 'tomtom' : /ola/.test(t) ? 'ola' : /ors|openroute|free|road/.test(t) ? 'ors' : null; };
 const engineLabel = e => ({ ors: 'openrouteservice', tomtom: 'TomTom (traffic)', ola: 'Ola Maps' })[e] || e;
@@ -1420,13 +1558,13 @@ function colsOf(head, map) { const h = head.map(normHead), c = {}; Object.entrie
 function routesBook(routes, example) {
   const wb = XLSX.utils.book_new(), R = [RT_HEAD], St = [ST_HEAD.concat(example ? [] : ['Arrive (calculated)', 'Depart (calculated)', 'Road km from previous'])];
   if (example) {
-    R.push(['Example – Sohna Road loop', '08:00', 30, 30, 2, 'openrouteservice', 'Planned speed']);
+    R.push(['Example – Sohna Road loop', '08:00', 30, 30, 2, 'openrouteservice', 'Planned speed', 'Circle']);
     St.push(['Example – Sohna Road loop', 1, 'PB Health Hospital (base)', '28.479814, 77.074042', 0, '', '', '', '', '', '', '', 'Start from hospital']);
     St.push(['Example – Sohna Road loop', 2, 'Subhash Chowk', '28.4302, 77.0400', 45, '', '', '', 12000, 'External', '', '', '']);
     St.push(['Example – Sohna Road loop', 3, 'Badshahpur', 'Badshahpur, Gurugram', 60, '', '10:30', '', '', '', '', 3, 'Market area, park near police post']);
   } else routes.forEach(r => {
     const d = r.data, sc = schedule(r);
-    R.push([r.name, d.start_time, d.speed, d.halt, d.radius, engineLabel(d.engine), d.time_src === 'engine' ? 'Routing engine estimate' : 'Planned speed']);
+    R.push([r.name, d.start_time, d.speed, d.halt, d.radius, engineLabel(d.engine), d.time_src === 'engine' ? 'Routing engine estimate' : 'Planned speed', d.shape === 'hex' ? 'Hexagon' : 'Circle']);
     sc.rows.forEach((x, i) => { const s = x.s; St.push([r.name, i + 1, s.name, `${s.lat}, ${s.lng}`, s.halt ?? '', s.speed ?? '', s.arr_ov || '', s.dep_ov || '', s.pop_src === 'Grid' ? '' : (s.pop ?? ''), s.pop_src || 'Manual', s.pop_date || '', s.radius ?? '', s.remarks || '', min2hm(x.arr), min2hm(x.dep), x.leg && isFinite(x.leg.km) ? +x.leg.km.toFixed(2) : '']); });
   });
   const ws1 = XLSX.utils.aoa_to_sheet(R), ws2 = XLSX.utils.aoa_to_sheet(St);
@@ -1438,7 +1576,7 @@ function routesBook(routes, example) {
     ['Location: "28.4798, 77.0740", a Google Maps link, or a place name (place names are looked up online; check them on the map after import).'],
     ['Halt and Speed to here: leave blank to use the route default. Fixed arrival / departure: optional exact times like 10:30.'],
     ['Population source: Manual, External or Grid. Population updated: a date like 2026-11-01.'],
-    ['Road routing: openrouteservice (free roads) or TomTom (traffic). Travel time from: Planned speed or Routing engine estimate.'],
+    ['Road routing: openrouteservice (free roads) or TomTom (traffic). Travel time from: Planned speed or Routing engine estimate. Coverage shape: Circle or Hexagon.'],
     ['Importing a route with the same name REPLACES its stops. Columns marked "calculated" are ignored on import.'],
     ['Upload in Route planner → Import routes (Excel template).']]), 'Read me');
   return wb;
@@ -1467,7 +1605,7 @@ async function imParse(wb) {
       const g = k => c[k] != null ? String(r[c[k]] ?? '').trim() : '', name = g('name'); if (!name) return;
       const o = {}, st = toHM(g('start')); if (st) o.start_time = st; else if (g('start')) warn.push(`Routes row ${n + 2}: start time “${g('start')}” not understood`);
       [['speed', 'speed'], ['halt', 'halt'], ['radius', 'radius']].forEach(([k, f]) => { const v = num(g(k)); if (v != null) o[f] = v; });
-      const en = engineOf(g('engine')); if (en) o.engine = en; if (g('time_src')) o.time_src = /engine|estimate/i.test(g('time_src')) ? 'engine' : 'speed';
+      const en = engineOf(g('engine')); if (en) o.engine = en; if (g('time_src')) o.time_src = /engine|estimate/i.test(g('time_src')) ? 'engine' : 'speed'; if (g('shape')) o.shape = /hex/i.test(g('shape')) ? 'hex' : 'circle';
       settings.set(name.toLowerCase(), { name, o });
     });
   }
@@ -1622,18 +1760,71 @@ $('bkLoad').addEventListener('change', async e => {
   }, 'Loading scenario…');
   if (ok) { S.dirty = false; if (skipped.length) alert(`Loaded, except:\n${skipped.join('\n')}`); toast('Scenario loaded. Reloading…'); setTimeout(() => location.reload(), 900); }
 });
-$('routePrint').addEventListener('click', () => {
-  const r = S.route; if (!r || !r.data.stops.length) { toast('Open a route with stops first.', true); return; }
-  const d = r.data, sc = schedule(r), t = sc.tot;
+function routeReportHTML(r, start, label) {
+  const d = r.data, sc = schedule(r, start), t = sc.tot;
   const gm = `https://www.google.com/maps/dir/${d.stops.slice(0, 10).map(s => `${s.lat},${s.lng}`).join('/')}`;
-  $('printArea').innerHTML = `<div><h1>${esc(r.name || 'Route')}</h1>
-    <div>${esc(CFG.ORG_NAME || '')} · Start ${esc(d.start_time)} · planned ${d.speed} km/h · default halt ${d.halt} min · radius ${d.radius} km · roads by ${esc(ENGINES[d.engine].name)}</div>
+  return `<div style="page-break-inside:avoid;margin-bottom:18px"><h1>${esc(r.name || 'Route')}${label ? ` <span style="font-size:12px;color:#555">(${esc(label)})</span>` : ''}</h1>
+    <div>${esc(CFG.ORG_NAME || '')} · Start ${esc(start != null ? min2hm(start) : d.start_time)} · planned ${d.speed} km/h · default halt ${d.halt} min · ${d.radius} km ${d.shape === 'hex' ? 'hexagon' : 'radius'} · roads by ${esc(ENGINES[d.engine].name)}</div>
     <div>${t.stops} stops · ${fmt(t.km)} km by road · driving ${dur(t.drive)} · halts ${dur(t.halt)} · ${min2hm(t.start)} → ${min2hm(t.end)}${dayTag(t.end)} (${dur(t.dur)})${t.pop_best != null ? ` · population ${fmtInt(t.pop_best)}` : ''} · ${fmt(t.area, 0)} km² covered</div>
-    <h2>Schedule</h2><table><tr><th>#</th><th>Location</th><th>Arrive</th><th>Halt</th><th>Depart</th><th>Road km</th><th>Travel</th><th>Speed</th><th>Population</th><th>Nearest hospital</th><th>Remarks</th></tr>
+    <table><tr><th>#</th><th>Location</th><th>Arrive</th><th>Halt</th><th>Depart</th><th>Road km</th><th>Travel</th><th>Speed</th><th>Population</th><th>Nearest hospital</th><th>Remarks</th></tr>
     ${sc.rows.map((x, i) => { const s = x.s, nh = nearestPlace(s, 'Hospital'); return `<tr><td>${i + 1}</td><td>${esc(s.name)}<br><span style="color:#555">${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}</span></td><td>${min2hm(x.arr)}${x.arr != null ? dayTag(x.arr) : ''}</td><td>${x.halt != null ? Math.round(x.halt) + ' min' : ''}</td><td>${min2hm(x.dep)}</td><td>${i ? (x.leg && isFinite(x.leg.km) ? fmt(x.leg.km) : '–') : 'Start'}</td><td>${i && x.travel != null ? dur(x.travel) : ''}</td><td>${i && x.speed ? fmt(x.speed, 0) + ' km/h' : ''}</td><td>${x.pop != null ? fmtInt(x.pop) : ''}</td><td>${nh ? `${esc(nh.p.name)} (${fmt(nh.km)} km)` : ''}</td><td>${esc(s.remarks || '')}</td></tr>`; }).join('')}</table>
     <p style="font-size:10px;color:#555">Google Maps (first 10 stops): ${esc(gm)}</p></div>`;
+}
+const viewItems = () => S.view === 'one' ? (S.route && S.route.data.stops.length ? [{ r: S.route, start: null, label: '' }] : []) : manyItems();
+$('routePrint').addEventListener('click', () => {
+  const items = viewItems(); if (!items.length) { toast('Open a route with stops first.', true); return; }
+  const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+  const head = S.view === 'one' ? '' : `<div style="margin-bottom:12px"><h1>${S.view === 'amb' ? `Routes of ${esc((ambById(S.viewAmb) || {}).reg_no || '')}` : 'All routes'}</h1><div>${esc(CFG.ORG_NAME || '')} · ${now} IST · ${items.length} route${items.length > 1 ? 's' : ''}</div>${$('mLegend').classList.contains('show') ? `<div style="margin-top:6px">${$('mLegend').innerHTML}</div>` : ''}</div>`;
+  $('printArea').innerHTML = head + items.map(it => routeReportHTML(it.r, it.start, it.label)).join('');
   setTimeout(() => window.print(), 150);
 });
+$('csvBtn').addEventListener('click', () => {
+  const items = viewItems(); if (!items.length) { toast('Open a route with stops first.', true); return; }
+  const q = v => /[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : (v ?? '');
+  const rows = [['Route', 'Stop no', 'Location name', 'Latitude', 'Longitude', 'Arrive', 'Halt (min)', 'Depart', 'Road km from previous', 'Travel (min)', 'Population', 'Coverage (km)', 'Coverage shape', 'Nearest hospital', 'Hospital distance (km, straight)', 'Remarks', 'Google Maps']];
+  items.forEach(it => { const r = it.r, d = r.data, sc = schedule(r, it.start); sc.rows.forEach((x, i) => { const s = x.s, nh = nearestPlace(s, 'Hospital'); rows.push([r.name || 'Route', i + 1, s.name, s.lat.toFixed(6), s.lng.toFixed(6), min2hm(x.arr), x.halt != null ? Math.round(x.halt) : '', min2hm(x.dep), i && x.leg && isFinite(x.leg.km) ? x.leg.km.toFixed(2) : '', i && x.travel != null ? Math.round(x.travel) : '', x.pop ?? '', num(s.radius) || d.radius, d.shape === 'hex' ? 'Hexagon' : 'Circle', nh ? nh.p.name : '', nh ? nh.km.toFixed(2) : '', s.remarks || '', `https://www.google.com/maps?q=${s.lat},${s.lng}`]); }); });
+  download(`${S.view === 'one' ? (S.route.name || 'route').toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'routes'}-stops.csv`, '﻿' + rows.map(r => r.map(q).join(',')).join('\n'), 'text/csv');
+});
+$('waBtn').addEventListener('click', () => {
+  const items = viewItems(); if (!items.length) { toast('Open a route with stops first.', true); return; }
+  const txt = items.slice(0, 6).map(it => { const r = it.r, d = r.data, sc = schedule(r, it.start), t = sc.tot;
+    return `*${r.name || 'Route'}*${it.label ? ` (${it.label})` : ''}\n${t.stops} stops · ${fmt(t.km)} km · ${min2hm(t.start)}–${min2hm(t.end)}${t.pop_best != null ? ` · population ${fmtInt(t.pop_best)}` : ''}\n` +
+      sc.rows.map((x, i) => `${i + 1}. ${x.s.name} – ${min2hm(x.arr)}–${min2hm(x.dep)}`).join('\n') + `\nMap: https://www.google.com/maps/dir/${d.stops.slice(0, 10).map(s => `${s.lat},${s.lng}`).join('/')}`; }).join('\n\n');
+  window.open('https://wa.me/?text=' + encodeURIComponent(`${CFG.ORG_NAME || 'Ambulance'} route plan\n\n${txt}${items.length > 6 ? `\n\n…and ${items.length - 6} more routes` : ''}`), '_blank', 'noopener');
+});
+/* share link: the open route (stops and settings, no road shapes) packed into the address */
+function b64u(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function unb64u(str) { str = str.replace(/-/g, '+').replace(/_/g, '/'); while (str.length % 4) str += '='; return Uint8Array.from(atob(str), c => c.charCodeAt(0)); }
+async function packRoute(r) {
+  const d = { ...r.data, legs: {} }, json = JSON.stringify({ v: 1, name: r.name, data: d });
+  if (window.CompressionStream) { const cs = new Blob([json]).stream().pipeThrough(new CompressionStream('deflate-raw')); return 'z' + b64u(new Uint8Array(await new Response(cs).arrayBuffer())); }
+  return 'j' + b64u(new TextEncoder().encode(json));
+}
+async function unpackRoute(code) {
+  const bytes = unb64u(code.slice(1));
+  if (code[0] === 'z') { const ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')); return JSON.parse(await new Response(ds).text()); }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+$('linkBtn').addEventListener('click', async () => {
+  if (!S.route || !S.route.data.stops.length) { toast('Open a route with stops first.', true); return; }
+  try {
+    const url = location.origin + location.pathname + '#r=' + await packRoute(S.route);
+    try { await navigator.clipboard.writeText(url); toast('Link copied. It opens this route for any signed-in admin, who can save it as a new route.'); }
+    catch (e) { prompt('Copy this link:', url); }
+  } catch (e) { toast('Could not make the link: ' + e.message, true); }
+});
+async function openSharedRoute() {
+  if (!location.hash.startsWith('#r=')) return;
+  const code = location.hash.slice(3); history.replaceState(null, '', location.pathname + location.search);
+  try {
+    const o = await unpackRoute(code); if (!o || !o.data || !Array.isArray(o.data.stops)) throw new Error('bad');
+    if (!confirm(`Open the shared route “${String(o.name || 'Route').slice(0, 80)}” (${o.data.stops.length} stops)? It opens as a new route; press Save to keep it.`)) return;
+    if (S.dirty && !confirm('Discard unsaved changes to the open route?')) return;
+    const n = newRoute(); n.name = `${String(o.name || 'Shared route').slice(0, 70)} (shared)`; n.data = { ...o.data, legs: {} }; n.data.stops = n.data.stops.map(s => ({ ...s, id: DB.uuid() }));
+    S.dirty = false; setRoute(n); showTab('routes'); setView('one');
+  } catch (e) { toast('That share link is damaged or incomplete.', true); }
+}
+
 
 async function boot() {
   busy(true, 'Loading…');
@@ -1649,6 +1840,7 @@ async function boot() {
   let t = 'routes'; try { t = localStorage.getItem('ap-route-tab') || 'routes'; } catch (e) {}
   showTab(t);
   loadDeps(addDays(weekStart(S.day), -7), addDays(weekStart(S.day), 6)).then(updateLiveCount).catch(() => {});
+  openSharedRoute(); window.addEventListener('hashchange', openSharedRoute);
   DB.list('pop_grid').then(rows => { if (rows.length) { S.grid = rows.map(r => [+r.lat, +r.lng, +r.pop]); buildGridIdx(); if (S.route) renderRoute(true); } }).catch(() => {});
 }
 (async () => {
