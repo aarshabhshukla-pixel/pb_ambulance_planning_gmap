@@ -198,10 +198,13 @@ begin
 end $$;
 
 -- p_kind: arr (reached), halt (halt started), dep (departed), undo, complete
-create or replace function public.team_event(p_token text, p_stop int, p_kind text, p_at timestamptz default now()) returns jsonb
+-- team_event now also stores where the phone was when Reached / Halt / Depart was tapped (p_lat, p_lng, p_acc)
+drop function if exists public.team_event(text, int, text, timestamptz);
+create or replace function public.team_event(p_token text, p_stop int, p_kind text, p_at timestamptz default now(),
+  p_lat double precision default null, p_lng double precision default null, p_acc double precision default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
-  d public.deployments; pr jsonb; st jsonb; ev jsonb; n int; at timestamptz; k text; last_i int := -1; i int;
+  d public.deployments; pr jsonb; st jsonb; ev jsonb; n int; at timestamptz; k text; last_i int := -1; i int; ll jsonb := null;
 begin
   select * into d from public.deployments where token = p_token for update;
   if not found or d.status = 'Cancelled' then raise exception 'This deployment link is not valid any more'; end if;
@@ -210,6 +213,9 @@ begin
   at := case when p_at is null or p_at > now() + interval '5 minutes' or p_at < now() - interval '24 hours' then now() else p_at end;
   pr := coalesce(d.progress, '{}'::jsonb);
   st := coalesce(pr -> 'stops', '{}'::jsonb);
+  if p_lat is not null and p_lng is not null and abs(p_lat) <= 90 and abs(p_lng) <= 180 then
+    ll := jsonb_build_array(round(p_lat::numeric, 6), round(p_lng::numeric, 6), round(coalesce(p_acc, 0)::numeric));
+  end if;
 
   if p_kind = 'undo' then
     if pr ? 'done' then
@@ -221,7 +227,7 @@ begin
       if last_i >= 0 then
         ev := st -> last_i::text;
         foreach k in array array['dep', 'halt', 'arr'] loop
-          if ev ? k then ev := ev - k; exit; end if;
+          if ev ? k then ev := ev - k - (k || '_ll'); exit; end if;
         end loop;
         st := st || jsonb_build_object(last_i::text, ev);
       end if;
@@ -232,14 +238,24 @@ begin
   else
     if p_stop is null or p_stop < 0 or p_stop >= n then raise exception 'Unknown stop'; end if;
     ev := coalesce(st -> p_stop::text, '{}'::jsonb);
-    if not ev ? p_kind then ev := ev || jsonb_build_object(p_kind, at); end if;
-    if p_kind in ('halt', 'dep') and not ev ? 'arr' then ev := ev || jsonb_build_object('arr', at); end if;
+    if not ev ? p_kind then
+      ev := ev || jsonb_build_object(p_kind, at);
+      if ll is not null then ev := ev || jsonb_build_object(p_kind || '_ll', ll); end if;
+    end if;
+    if p_kind in ('halt', 'dep') and not ev ? 'arr' then
+      ev := ev || jsonb_build_object('arr', at);
+      if ll is not null then ev := ev || jsonb_build_object('arr_ll', ll); end if;
+    end if;
     st := st || jsonb_build_object(p_stop::text, ev);
     pr := pr || jsonb_build_object('stops', st);
   end if;
 
   update public.deployments set
     progress = pr,
+    last_lat = coalesce((ll ->> 0)::double precision, last_lat),
+    last_lng = coalesce((ll ->> 1)::double precision, last_lng),
+    last_acc = case when ll is not null then (ll ->> 2)::double precision else last_acc end,
+    last_seen = case when ll is not null then now() else last_seen end,
     status = case
       when pr ? 'done' then 'Completed'
       when pr -> 'stops' is not null and exists (select 1 from jsonb_each(pr -> 'stops') x where x.value <> '{}'::jsonb) then 'In progress'
@@ -266,5 +282,5 @@ end $$;
 
 revoke all on function public.team_view(public.deployments) from public, anon, authenticated;
 grant execute on function public.team_get(text) to anon, authenticated;
-grant execute on function public.team_event(text, int, text, timestamptz) to anon, authenticated;
+grant execute on function public.team_event(text, int, text, timestamptz, double precision, double precision, double precision) to anon, authenticated;
 grant execute on function public.team_ping(text, double precision, double precision, double precision) to anon, authenticated;

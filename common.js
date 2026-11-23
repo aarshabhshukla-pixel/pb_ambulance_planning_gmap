@@ -76,6 +76,8 @@
       const shift = st === 'done' ? 0 : delay;
       return {
         i, stop: p, st, actArr: e.arr || null, actHalt: e.halt || null, actDep: e.dep || null,
+        llArr: e.arr_ll || null, llDep: e.dep_ll || null,
+        offArr: e.arr_ll ? haversine([p.lat, p.lng], e.arr_ll) * 1000 : null,
         arrDelay: e.arr && p.arr ? (new Date(e.arr) - new Date(p.arr)) / 60000 : null,
         depDelay: e.dep && p.dep ? (new Date(e.dep) - new Date(p.dep)) / 60000 : null,
         etaArr: e.arr ? e.arr : p.arr ? new Date(new Date(p.arr).getTime() + shift * 60000).toISOString() : null,

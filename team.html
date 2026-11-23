@@ -17,7 +17,10 @@
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--font);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
 button{font:inherit}
-.top{background:linear-gradient(100deg,#0b1730,#15294a);color:#fff;padding:14px 16px 16px;padding-top:max(14px,env(safe-area-inset-top))}
+.top{position:relative;background:linear-gradient(100deg,#0b1730,#15294a);color:#fff;padding:14px 16px 16px;padding-top:max(14px,env(safe-area-inset-top))}
+.lang{position:absolute;right:14px;top:max(12px,env(safe-area-inset-top));background:#fff;color:#0b1730;border:0;border-radius:999px;padding:6px 14px;font-weight:700;font-size:14px;cursor:pointer;z-index:2}
+body.hi{--font:'Exo 2',"Noto Sans Devanagari","Nirmala UI","Mangal",system-ui,sans-serif}
+.top h1{padding-right:96px}
 .top .org{font-size:12.5px;opacity:.7}
 .top h1{margin:2px 0 2px;font-size:24px;letter-spacing:.3px}
 .top .sub{font-size:14px;opacity:.85}
@@ -66,7 +69,7 @@ button{font:inherit}
 </head>
 <body>
 <div class="banner" id="offline">You are offline. Taps are saved on this phone and sent when the internet is back.</div>
-<header class="top" id="top"><div class="org" id="org">Ambulance deployment</div><h1 id="reg">Loading…</h1><div class="sub" id="sub"></div><div class="crew" id="crew"></div><div class="bar" id="barWrap" style="display:none;background:rgba(255,255,255,.15)"><i id="bar"></i></div></header>
+<header class="top" id="top"><button class="lang" id="langBtn" type="button" aria-label="Language / भाषा">हिंदी</button><div class="org" id="org">Ambulance deployment</div><h1 id="reg">Loading…</h1><div class="sub" id="sub"></div><div class="crew" id="crew"></div><div class="bar" id="barWrap" style="display:none;background:rgba(255,255,255,.15)"><i id="bar"></i></div></header>
 <div class="wrap" id="main"><div class="msg">Loading your route…</div></div>
 <div class="toast" id="toast"></div>
 <script src="config.js"></script>
@@ -75,102 +78,215 @@ button{font:inherit}
 <script src="db.js"></script>
 <script>
 'use strict';
-const { esc, fmt, istHM, niceDate, navUrl, progressInfo, delayText, ago } = AP;
+const { esc, fmt, istHM, navUrl, progressInfo, ago } = AP;
 const $ = id => document.getElementById(id);
 const TOKEN = (new URLSearchParams(location.hash.replace(/^#/, '')).get('t') || new URLSearchParams(location.search).get('t') || '').trim();
 const QK = 'ap-team-q-' + TOKEN, LK = 'ap-team-last-' + TOKEN;
-let V = null, busyAct = false, watchId = null, lastPing = 0, lastPingPos = null, wake = null;
+let V = null, busyAct = false, watchId = null, lastPing = 0, lastPingPos = null, wake = null, oldRpc = false, posCache = null, posAsk = 0;
+
+/* ---------- English / Hindi ---------- */
+const TX = {
+  en: {
+    org: 'ambulance deployment', loading: 'Loading…', loadingRoute: 'Loading your route…', notAvail: 'Route not available',
+    offline: 'You are offline. Taps are saved on this phone and sent when the internet is back.',
+    badLink: 'This link is incomplete. Scan the QR code again or ask the control room for the link.',
+    invalid: 'This link is not valid any more (the deployment may have been cancelled or a new link was made). Ask the control room for the latest QR.',
+    loadErr: 'Could not load the route: ', demo: 'This app is not connected to its database yet (demo mode). Open this link on the same computer that made it, or ask the admin to finish setup.',
+    stale: 'Could not refresh: showing the last saved copy.',
+    status: { Completed: 'Completed', 'In progress': 'In progress', Assigned: 'Assigned', Planned: 'Planned' },
+    pilot: 'Pilot', emt: 'EMT', noStops: 'No stops in this deployment yet. Ask the control room.',
+    deployment: 'Deployment', completed: 'Completed ✓', finished: t => `Finished at ${t}. Thank you.`, undoMistake: 'Undo (tapped by mistake)',
+    allDone: n => `All ${n} stops done`, finish: 'Finish the deployment', complete: 'Complete deployment', undoLast: 'Undo last tap',
+    atStop: (i, n) => `At stop ${i} of ${n}`, firstStop: n => `First stop · 1 of ${n}`, nextStop: (i, n) => `Next stop · ${i} of ${n}`,
+    reachedAt: 'Reached at', reachBy: 'Reach by', expected: t => `expected ${t}`, leaveAt: 'Leave at', halt: m => `halt ${m} min`, haltStarted: t => `halt started ${t}`,
+    running: x => `Running ${x}`, onTime: 'on time', late: m => `${m} min late`, early: m => `${m} min early`,
+    startHalt: 'Start halt', departNav: n => `Depart & navigate → ${n}`, departLast: 'Depart (last stop)',
+    navFirst: 'Navigate to first point', navNext: 'Navigate to next point', reached: 'Reached location', otherMaps: 'Other maps app',
+    routeDone: (d, n) => `Route · ${d} of ${n} done`, kmPrev: k => `${k} km from previous`, actual: 'actual', planned: 'planned', locSaved: 'location saved',
+    openRest: n => `Open the remaining ${n > 1 ? `${n} stops` : 'stop'} in Google Maps`, next10: ' (next 10)',
+    share: 'Share live location with the control room',
+    shareNote: 'Only while this page is open. Your location is sent to your hospital’s control room for this deployment and stops when you untick this or finish.',
+    lastSent: t => ` Last sent ${t}.`, awake: 'Keep the screen on', waiting: n => `${n} tap${n > 1 ? 's' : ''} waiting to be sent · `, updated: 'Updated', refresh: 'Refresh',
+    tArr: 'Arrival recorded', tDep: 'Departure recorded', tDepNav: 'Departure recorded · opening Google Maps', tHalt: 'Halt started', tDone: 'Deployment completed', tUndo: 'Undone',
+    cUndo: 'Undo your last tap?', cDone: 'Complete this deployment?',
+    noGeo: 'This phone/browser cannot share location.', geoDenied: 'Location permission was denied. Allow location for this site in the browser settings.', geoErr: 'Could not get location: ',
+    noAwake: 'Could not keep the screen on.', locTip: 'Allow location when the phone asks: it saves where you were when you tap Reached and Depart.', langBtn: 'हिंदी'
+  },
+  hi: {
+    org: 'एम्बुलेंस ड्यूटी', loading: 'लोड हो रहा है…', loadingRoute: 'आपका रूट लोड हो रहा है…', notAvail: 'रूट उपलब्ध नहीं',
+    offline: 'आप ऑफ़लाइन हैं। टैप इस फ़ोन में सेव हैं और इंटरनेट आने पर भेज दिए जाएँगे।',
+    badLink: 'यह लिंक अधूरा है। QR कोड फिर से स्कैन करें या कंट्रोल रूम से लिंक माँगें।',
+    invalid: 'यह लिंक अब मान्य नहीं है (ड्यूटी रद्द हुई हो सकती है या नया लिंक बना है)। कंट्रोल रूम से नया QR माँगें।',
+    loadErr: 'रूट लोड नहीं हो सका: ', demo: 'यह ऐप अभी डेटाबेस से नहीं जुड़ा है (डेमो मोड)। यह लिंक उसी कंप्यूटर पर खोलें जिस पर बना था, या एडमिन से सेटअप पूरा करवाएँ।',
+    stale: 'रीफ़्रेश नहीं हो सका: आखिरी सेव कॉपी दिख रही है।',
+    status: { Completed: 'पूरा', 'In progress': 'जारी', Assigned: 'सौंपा गया', Planned: 'योजना में' },
+    pilot: 'पायलट', emt: 'ईएमटी', noStops: 'इस ड्यूटी में अभी कोई स्टॉप नहीं है। कंट्रोल रूम से पूछें।',
+    deployment: 'ड्यूटी', completed: 'पूरा ✓', finished: t => `${t} पर पूरा हुआ। धन्यवाद।`, undoMistake: 'वापस लें (गलती से टैप हुआ)',
+    allDone: n => `सभी ${n} स्टॉप पूरे`, finish: 'ड्यूटी पूरी करें', complete: 'ड्यूटी पूरी करें', undoLast: 'पिछला टैप वापस लें',
+    atStop: (i, n) => `स्टॉप ${i} / ${n} पर`, firstStop: n => `पहला स्टॉप · 1 / ${n}`, nextStop: (i, n) => `अगला स्टॉप · ${i} / ${n}`,
+    reachedAt: 'पहुँचे', reachBy: 'पहुँचना है', expected: t => `अनुमानित ${t}`, leaveAt: 'निकलना है', halt: m => `हॉल्ट ${m} मिनट`, haltStarted: t => `हॉल्ट शुरू ${t}`,
+    running: x => `स्थिति: ${x}`, onTime: 'समय पर', late: m => `${m} मिनट देर`, early: m => `${m} मिनट जल्दी`,
+    startHalt: 'हॉल्ट शुरू करें', departNav: n => `निकलें और नेविगेट करें → ${n}`, departLast: 'निकलें (आखिरी स्टॉप)',
+    navFirst: 'पहले पॉइंट पर नेविगेट करें', navNext: 'अगले पॉइंट पर नेविगेट करें', reached: 'लोकेशन पर पहुँच गए', otherMaps: 'दूसरा मैप ऐप',
+    routeDone: (d, n) => `रूट · ${n} में से ${d} पूरे`, kmPrev: k => `पिछले से ${k} किमी`, actual: 'असल', planned: 'योजना', locSaved: 'लोकेशन सेव',
+    openRest: n => `बाकी ${n} स्टॉप Google Maps में खोलें`, next10: ' (अगले 10)',
+    share: 'कंट्रोल रूम के साथ लाइव लोकेशन शेयर करें',
+    shareNote: 'केवल जब यह पेज खुला हो। आपकी लोकेशन इस ड्यूटी के लिए अस्पताल के कंट्रोल रूम को भेजी जाती है और टिक हटाने या ड्यूटी पूरी करने पर बंद हो जाती है।',
+    lastSent: t => ` आखिरी बार भेजा: ${t}।`, awake: 'स्क्रीन चालू रखें', waiting: n => `${n} टैप भेजना बाकी · `, updated: 'अपडेट', refresh: 'रीफ़्रेश',
+    tArr: 'पहुँचना दर्ज हुआ', tDep: 'निकलना दर्ज हुआ', tDepNav: 'निकलना दर्ज हुआ · Google Maps खुल रहा है', tHalt: 'हॉल्ट शुरू हुआ', tDone: 'ड्यूटी पूरी हुई', tUndo: 'वापस लिया गया',
+    cUndo: 'पिछला टैप वापस लें?', cDone: 'यह ड्यूटी पूरी करें?',
+    noGeo: 'यह फ़ोन/ब्राउज़र लोकेशन शेयर नहीं कर सकता।', geoDenied: 'लोकेशन की अनुमति नहीं मिली। ब्राउज़र सेटिंग में इस साइट के लिए लोकेशन चालू करें।', geoErr: 'लोकेशन नहीं मिल सकी: ',
+    noAwake: 'स्क्रीन चालू नहीं रखी जा सकी।', locTip: 'फ़ोन पूछे तो लोकेशन की अनुमति दें: पहुँचे और निकलें टैप करते समय आप कहाँ थे, यह सेव होता है।', langBtn: 'English'
+  }
+};
+let LANG = 'en';
+try { LANG = localStorage.getItem('ap-team-lang') || ((navigator.language || '').toLowerCase().startsWith('hi') ? 'hi' : 'en'); } catch (e) { /* default */ }
+if (!TX[LANG]) LANG = 'en';
+const T = (k, ...a) => { const v = TX[LANG][k] ?? TX.en[k]; return typeof v === 'function' ? v(...a) : v; };
+const WDH = ['रवि', 'सोम', 'मंगल', 'बुध', 'गुरु', 'शुक्र', 'शनि'], MOH = ['जन', 'फ़र', 'मार्च', 'अप्रैल', 'मई', 'जून', 'जुलाई', 'अग', 'सित', 'अक्टू', 'नव', 'दिस'];
+const niceDate = ds => { if (LANG !== 'hi' || !ds) return AP.niceDate(ds); const [y, m, d] = ds.split('-').map(Number), wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); return `${WDH[wd]}, ${d} ${MOH[m - 1]} ${y}`; };
+const delayText = m => m == null || !isFinite(m) ? '' : Math.abs(m) < 3 ? T('onTime') : m > 0 ? T('late', Math.round(m)) : T('early', Math.round(-m));
+function applyLang() {
+  document.documentElement.lang = LANG; document.body.classList.toggle('hi', LANG === 'hi');
+  $('langBtn').textContent = T('langBtn'); $('offline').textContent = T('offline');
+  $('org').textContent = (AP.CFG.ORG_NAME ? AP.CFG.ORG_NAME + ' · ' : '') + T('org');
+}
+$('langBtn').addEventListener('click', () => { LANG = LANG === 'hi' ? 'en' : 'hi'; try { localStorage.setItem('ap-team-lang', LANG); } catch (e) { /* ignore */ } applyLang(); if (V) render(); else $('main').innerHTML = `<div class="msg">${esc(T('loadingRoute'))}</div>`; });
+applyLang();
+$('reg').textContent = T('loading'); $('main').innerHTML = `<div class="msg">${esc(T('loadingRoute'))}</div>`;
+
 function toast(m, bad) { const t = $('toast'); t.textContent = m; t.className = 'toast show' + (bad ? ' bad' : ''); clearTimeout(toast.t); toast.t = setTimeout(() => { t.className = 'toast'; }, 3500); }
 const queue = () => { try { return JSON.parse(localStorage.getItem(QK) || '[]'); } catch (e) { return []; } };
-const setQueue = q => { try { localStorage.setItem(QK, JSON.stringify(q)); } catch (e) {} };
-if (AP.CFG.ORG_NAME) $('org').textContent = AP.CFG.ORG_NAME + ' · ambulance deployment';
+const setQueue = q => { try { localStorage.setItem(QK, JSON.stringify(q)); } catch (e) { /* ignore */ } };
 
 async function load(quiet) {
-  if (!TOKEN) return fail('This link is incomplete. Scan the QR code again or ask the control room for the link.');
+  if (!TOKEN) return fail(T('badLink'));
   try {
     await flush();
     const v = await DB.rpc('team_get', { p_token: TOKEN });
-    if (!v) return fail('This link is not valid any more (the deployment may have been cancelled or a new link was made). Ask the control room for the latest QR.');
-    V = v; try { localStorage.setItem(LK, JSON.stringify(v)); } catch (e) {}
+    if (!v) return fail(T('invalid'));
+    V = v; try { localStorage.setItem(LK, JSON.stringify(v)); } catch (e) { /* ignore */ }
     render();
   } catch (e) {
-    if (!V) { try { V = JSON.parse(localStorage.getItem(LK) || 'null'); } catch (er) {} }
-    if (V) { render(); if (!quiet) toast('Could not refresh: showing the last saved copy.', true); }
-    else fail(DB.cloud ? 'Could not load the route: ' + e.message : 'This app is not connected to its database yet (demo mode). Open this link on the same computer that made it, or ask the admin to finish setup.');
+    if (!V) { try { V = JSON.parse(localStorage.getItem(LK) || 'null'); } catch (er) { /* ignore */ } }
+    if (V) { render(); if (!quiet) toast(T('stale'), true); }
+    else fail(DB.cloud ? T('loadErr') + e.message : T('demo'));
   }
 }
-function fail(m) { $('reg').textContent = 'Route not available'; $('sub').textContent = ''; $('crew').innerHTML = ''; $('main').innerHTML = `<div class="card msg">${esc(m)}</div>`; }
+function fail(m) { $('reg').textContent = T('notAvail'); $('sub').textContent = ''; $('crew').innerHTML = ''; $('main').innerHTML = `<div class="card msg">${esc(m)}</div>`; }
 /* apply queued (not yet sent) taps on top of the server copy so the screen is always current */
 function localProgress() {
   const pr = JSON.parse(JSON.stringify(V.progress || {})); pr.stops = pr.stops || {};
   queue().forEach(q => {
     if (q.kind === 'complete') pr.done = q.at;
-    else if (q.kind === 'undo') { if (pr.done) delete pr.done; else { const n = (V.plan.stops || []).length; for (let i = n - 1; i >= 0; i--) { const e = pr.stops[i]; if (e && Object.keys(e).length) { for (const k of ['dep', 'halt', 'arr']) if (e[k]) { delete e[k]; break; } break; } } } }
-    else { const e = pr.stops[q.stop] = pr.stops[q.stop] || {}; if (!e[q.kind]) e[q.kind] = q.at; if ((q.kind === 'halt' || q.kind === 'dep') && !e.arr) e.arr = q.at; }
+    else if (q.kind === 'undo') { if (pr.done) delete pr.done; else { const n = (V.plan.stops || []).length; for (let i = n - 1; i >= 0; i--) { const e = pr.stops[i]; if (e && Object.keys(e).length) { for (const k of ['dep', 'halt', 'arr']) if (e[k]) { delete e[k]; delete e[k + '_ll']; break; } break; } } } }
+    else { const e = pr.stops[q.stop] = pr.stops[q.stop] || {}; const ll = q.lat != null ? [q.lat, q.lng, q.acc || 0] : null; if (!e[q.kind]) { e[q.kind] = q.at; if (ll) e[q.kind + '_ll'] = ll; } if ((q.kind === 'halt' || q.kind === 'dep') && !e.arr) { e.arr = q.at; if (ll) e.arr_ll = ll; } }
   });
   return pr;
 }
 function render() {
   const plan = V.plan || {}, stops = plan.stops || [], pr = localProgress(), pi = progressInfo(plan, pr);
   $('reg').textContent = V.reg_no || 'Ambulance';
-  $('sub').innerHTML = `${esc(niceDate(V.date))} · ${esc(V.start_time)}–${esc(V.end_time)} · <span class="st">${esc(pr.done ? 'Completed' : pi.started ? 'In progress' : V.status)}</span><br>${esc(plan.route_name || '')}`;
+  const stTxt = pr.done ? 'Completed' : pi.started ? 'In progress' : V.status;
+  $('sub').innerHTML = `${esc(niceDate(V.date))} · ${esc(V.start_time)}–${esc(V.end_time)} · <span class="st">${esc(T('status')[stTxt] || stTxt)}</span><br>${esc(plan.route_name || '')}`;
   const tel = (p, role) => p && p.phone ? `<a href="tel:${esc(String(p.phone).replace(/[^\d+]/g, ''))}">${role}: ${esc(p.name)} 📞</a>` : p ? `<span>${role}: ${esc(p.name)}</span>` : '';
-  $('crew').innerHTML = [tel(V.pilot, 'Pilot'), tel(V.emt, 'EMT')].filter(Boolean).join('');
+  $('crew').innerHTML = [tel(V.pilot, T('pilot')), tel(V.emt, T('emt'))].filter(Boolean).join('');
   $('barWrap').style.display = stops.length ? '' : 'none'; $('bar').style.width = (stops.length ? pi.nDone / stops.length * 100 : 0) + '%';
-  if (!stops.length) { $('main').innerHTML = '<div class="card msg">No stops in this deployment yet. Ask the control room.</div>'; return; }
+  if (!stops.length) { $('main').innerHTML = `<div class="card msg">${esc(T('noStops'))}</div>`; return; }
   let cur = '';
-  const dl = m => { const t = delayText(m); return t ? `<span class="${m >= 3 ? 'late' : 'ontime'}">${t}</span>` : ''; };
-  if (pr.done) cur = `<div class="card"><div class="lbl">Deployment</div><div class="big">Completed ✓</div><div class="note">Finished at ${istHM(pr.done)}. Thank you.</div><button class="link" data-a="undo">Undo (tapped by mistake)</button></div>`;
-  else if (pi.allDeparted) cur = `<div class="card"><div class="lbl">All ${stops.length} stops done</div><div class="big">Finish the deployment</div><button class="btn main" data-a="complete">Complete deployment</button><button class="link" data-a="undo">Undo last tap</button></div>`;
+  const dl = m => { const t = delayText(m); return t ? `<span class="${m >= 3 ? 'late' : 'ontime'}">${esc(t)}</span>` : ''; };
+  if (pr.done) cur = `<div class="card"><div class="lbl">${esc(T('deployment'))}</div><div class="big">${esc(T('completed'))}</div><div class="note">${esc(T('finished', istHM(pr.done)))}</div><button class="link" data-a="undo">${esc(T('undoMistake'))}</button></div>`;
+  else if (pi.allDeparted) cur = `<div class="card"><div class="lbl">${esc(T('allDone', stops.length))}</div><div class="big">${esc(T('finish'))}</div><button class="btn main" data-a="complete">${esc(T('complete'))}</button><button class="link" data-a="undo">${esc(T('undoLast'))}</button></div>`;
   else {
     const r = pi.rows[pi.cur], s = r.stop, at = r.st === 'at', next = stops[pi.cur + 1];
+    if (at) warmPos();
     cur = `<div class="card">
-      <div class="lbl">${at ? `At stop ${pi.cur + 1} of ${stops.length}` : pi.cur === 0 && !pi.started ? `First stop · 1 of ${stops.length}` : `Next stop · ${pi.cur + 1} of ${stops.length}`}</div>
+      <div class="lbl">${esc(at ? T('atStop', pi.cur + 1, stops.length) : pi.cur === 0 && !pi.started ? T('firstStop', stops.length) : T('nextStop', pi.cur + 1, stops.length))}</div>
       <div class="big">${esc(s.name)}</div>
       ${s.remarks ? `<div class="rem">${esc(s.remarks)}</div>` : ''}
       <div class="times">
-        <div><small>${at ? 'Reached at' : 'Reach by'}</small><b>${at ? istHM(r.actArr) : istHM(s.arr)}</b><small>${at ? dl(r.arrDelay) : pi.started && Math.abs(pi.delay) >= 3 ? `expected ${istHM(r.etaArr)}` : ''}</small></div>
-        <div><small>Leave at</small><b>${istHM(s.dep)}</b><small>${s.halt ? `halt ${s.halt} min` : ''}${at && r.actHalt ? ' · halt started ' + istHM(r.actHalt) : ''}</small></div>
+        <div><small>${esc(at ? T('reachedAt') : T('reachBy'))}</small><b>${at ? istHM(r.actArr) : istHM(s.arr)}</b><small>${at ? dl(r.arrDelay) : pi.started && Math.abs(pi.delay) >= 3 ? esc(T('expected', istHM(r.etaArr))) : ''}</small></div>
+        <div><small>${esc(T('leaveAt'))}</small><b>${istHM(s.dep)}</b><small>${s.halt ? esc(T('halt', s.halt)) : ''}${at && r.actHalt ? ' · ' + esc(T('haltStarted', istHM(r.actHalt))) : ''}</small></div>
       </div>
-      ${pi.started && !at ? `<div class="note">Running ${dl(pi.delay) || 'on time'}</div>` : ''}
-      ${at ? `${!r.actHalt ? '<button class="btn sec" data-a="halt">Start halt</button>' : ''}
-              <button class="btn go" data-a="dep">Depart${next ? ` → ${esc(next.name)}` : ' (last stop)'}</button>
-              ${next ? `<a class="btn nav" href="${navUrl(next.lat, next.lng)}" target="_blank" rel="noopener">Navigate to next point</a>` : ''}`
-            : `<a class="btn nav" href="${navUrl(s.lat, s.lng)}" target="_blank" rel="noopener">Navigate to ${pi.cur === 0 && !pi.started ? 'first' : 'next'} point</a>
-              <button class="btn main" data-a="arr">Reached location</button>`}
-      <div class="row2"><a class="link" href="geo:${s.lat},${s.lng}?q=${s.lat},${s.lng}(${encodeURIComponent(s.name)})">Other maps app</a>${pi.started ? '<button class="link" style="text-align:right" data-a="undo">Undo last tap</button>' : ''}</div>
+      ${pi.started && !at ? `<div class="note">${T('running', dl(pi.delay) || esc(T('onTime')))}</div>` : ''}
+      ${at ? `${!r.actHalt ? `<button class="btn sec" data-a="halt">${esc(T('startHalt'))}</button>` : ''}
+              <button class="btn go" data-a="dep">${next ? esc(T('departNav', next.name)) : esc(T('departLast'))}</button>`
+            : `<a class="btn nav" href="${navUrl(s.lat, s.lng)}" target="_blank" rel="noopener">${esc(pi.cur === 0 && !pi.started ? T('navFirst') : T('navNext'))}</a>
+              <button class="btn main" data-a="arr">${esc(T('reached'))}</button>
+              ${!pi.started ? `<div class="note" style="margin-top:8px">${esc(T('locTip'))}</div>` : ''}`}
+      <div class="row2"><a class="link" href="geo:${s.lat},${s.lng}?q=${s.lat},${s.lng}(${encodeURIComponent(s.name)})">${esc(T('otherMaps'))}</a>${pi.started ? `<button class="link" style="text-align:right" data-a="undo">${esc(T('undoLast'))}</button>` : ''}</div>
     </div>`;
   }
-  const items = pi.rows.map(r => `<li class="${r.st === 'done' ? 'done' : r.i === pi.cur ? 'cur' : ''}"><span class="n">${r.st === 'done' ? '✓' : r.i + 1}</span><span>${esc(r.stop.name)}${r.stop.remarks ? `<small>${esc(r.stop.remarks)}</small>` : ''}${r.stop.km != null ? `<small>${fmt(r.stop.km)} km from previous</small>` : ''}</span><span class="t">${r.actArr ? `${istHM(r.actArr)}${r.actDep ? '–' + istHM(r.actDep) : ''}<small>actual</small>` : `${istHM(r.stop.arr)}–${istHM(r.stop.dep)}<small>planned</small>`}</span></li>`).join('');
+  const items = pi.rows.map(r => `<li class="${r.st === 'done' ? 'done' : r.i === pi.cur ? 'cur' : ''}"><span class="n">${r.st === 'done' ? '✓' : r.i + 1}</span><span>${esc(r.stop.name)}${r.stop.remarks ? `<small>${esc(r.stop.remarks)}</small>` : ''}${r.stop.km != null ? `<small>${esc(T('kmPrev', fmt(r.stop.km)))}</small>` : ''}</span><span class="t">${r.actArr ? `${istHM(r.actArr)}${r.actDep ? '–' + istHM(r.actDep) : ''}<small>${esc(T('actual'))}${r.llArr ? ' · 📍' : ''}</small>` : `${istHM(r.stop.arr)}–${istHM(r.stop.dep)}<small>${esc(T('planned'))}</small>`}</span></li>`).join('');
   const q = queue().length;
   const restFrom = pr.done || pi.allDeparted ? stops.length : pi.rows[pi.cur].st === 'at' ? pi.cur + 1 : pi.cur, rest = stops.slice(restFrom, restFrom + 10);
   const ll = s => `${(+s.lat).toFixed(6)},${(+s.lng).toFixed(6)}`;
   const allUrl = rest.length ? `https://www.google.com/maps/dir/?api=1&destination=${ll(rest[rest.length - 1])}${rest.length > 1 ? `&waypoints=${encodeURIComponent(rest.slice(0, -1).map(ll).join('|'))}` : ''}&travelmode=driving` : '';
   $('main').innerHTML = cur + `
-    <div class="card"><div class="lbl">Route · ${pi.nDone} of ${stops.length} done</div><ul class="list">${items}</ul>${allUrl ? `<a class="link" style="display:block;margin-top:10px" href="${allUrl}" target="_blank" rel="noopener">Open the remaining ${rest.length > 1 ? `${rest.length} stops` : 'stop'} in Google Maps${stops.length - restFrom > 10 ? ' (next 10)' : ''}</a>` : ''}</div>
-    <div class="card"><label class="loc"><input type="checkbox" id="share"${watchId != null ? ' checked' : ''}><span><b>Share live location with the control room</b><br><span class="note">Only while this page is open. Your location is sent to your hospital’s control room for this deployment and stops when you untick this or finish.${lastPing ? ` Last sent ${ago(lastPing)}.` : ''}</span></span></label>
-    ${'wakeLock' in navigator ? `<label class="loc" style="margin-top:10px"><input type="checkbox" id="awake"${wake ? ' checked' : ''}><span>Keep the screen on</span></label>` : ''}</div>
-    <p class="note" style="text-align:center">${q ? `${q} tap${q > 1 ? 's' : ''} waiting to be sent · ` : ''}Updated ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} · <button class="link" id="reload">Refresh</button></p>`;
+    <div class="card"><div class="lbl">${esc(T('routeDone', pi.nDone, stops.length))}</div><ul class="list">${items}</ul>${allUrl ? `<a class="link" style="display:block;margin-top:10px" href="${allUrl}" target="_blank" rel="noopener">${esc(T('openRest', rest.length))}${stops.length - restFrom > 10 ? esc(T('next10')) : ''}</a>` : ''}</div>
+    <div class="card"><label class="loc"><input type="checkbox" id="share"${watchId != null ? ' checked' : ''}><span><b>${esc(T('share'))}</b><br><span class="note">${esc(T('shareNote'))}${lastPing ? esc(T('lastSent', ago(lastPing))) : ''}</span></span></label>
+    ${'wakeLock' in navigator ? `<label class="loc" style="margin-top:10px"><input type="checkbox" id="awake"${wake ? ' checked' : ''}><span>${esc(T('awake'))}</span></label>` : ''}</div>
+    <p class="note" style="text-align:center">${q ? esc(T('waiting', q)) : ''}${esc(T('updated'))} ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} · <button class="link" id="reload">${esc(T('refresh'))}</button></p>`;
 }
-$('main').addEventListener('click', async e => {
-  const b = e.target.closest('[data-a]'); if (b) { e.preventDefault(); act(b.dataset.a); return; }
+$('main').addEventListener('click', e => {
+  const b = e.target.closest('[data-a]');
+  if (b) {
+    e.preventDefault();
+    /* Depart also opens Google Maps to the next point. It must open here, inside the tap, or the phone blocks it. */
+    let nav = false;
+    if (b.dataset.a === 'dep' && V && !busyAct) {
+      const pi = progressInfo(V.plan, localProgress()), next = (V.plan.stops || [])[pi.cur + 1];
+      if (next) { window.open(navUrl(next.lat, next.lng), '_blank', 'noopener'); nav = true; }
+    }
+    act(b.dataset.a, nav); return;
+  }
   if (e.target.id === 'reload') load();
 });
 $('main').addEventListener('change', e => {
   if (e.target.id === 'share') { if (e.target.checked) startShare(); else stopShare(); }
   if (e.target.id === 'awake') keepAwake(e.target.checked);
 });
-async function act(kind) {
+
+/* ---------- phone location for each tap ---------- */
+function geoOnce(timeout, maxAge) {
+  return new Promise(res => {
+    if (!('geolocation' in navigator)) { res(null); return; }
+    let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+    setTimeout(() => fin(null), timeout + 500);
+    navigator.geolocation.getCurrentPosition(p => fin({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, t: Date.now() }), () => fin(null), { enableHighAccuracy: true, timeout, maximumAge: maxAge });
+  });
+}
+/* while the ambulance waits at a stop, keep a fresh position ready so Depart can save it even after Maps opens */
+async function warmPos() {
+  if (Date.now() - posAsk < 60000) return; posAsk = Date.now();
+  try { if (navigator.permissions) { const s = await navigator.permissions.query({ name: 'geolocation' }); if (s.state !== 'granted') return; } } catch (e) { return; }
+  const p = await geoOnce(15000, 30000); if (p) posCache = p;
+}
+async function tapPos(kind) {
+  if (lastPingPos && Date.now() - lastPing < 60000 && lastPingPos.length > 1) posCache = { lat: lastPingPos[0], lng: lastPingPos[1], acc: lastPingPos[2] || 0, t: lastPing };
+  if (kind === 'dep' && posCache && Date.now() - posCache.t < 180000) return posCache;
+  const p = await geoOnce(9000, 20000); if (p) { posCache = p; return p; }
+  return posCache && Date.now() - posCache.t < 180000 ? posCache : null;
+}
+
+async function act(kind, nav) {
   if (busyAct || !V) return;
   const pi = progressInfo(V.plan, localProgress());
-  if (kind === 'undo' && !confirm('Undo your last tap?')) return;
-  if (kind === 'complete' && !confirm('Complete this deployment?')) return;
+  if (kind === 'undo' && !confirm(T('cUndo'))) return;
+  if (kind === 'complete' && !confirm(T('cDone'))) return;
   busyAct = true;
-  const q = queue(); q.push({ kind, stop: ['arr', 'halt', 'dep'].includes(kind) ? pi.cur : null, at: new Date().toISOString() }); setQueue(q);
+  const tap = ['arr', 'halt', 'dep'].includes(kind), item = { kind, stop: tap ? pi.cur : null, at: new Date().toISOString() };
+  if (tap) item.pend = Date.now();
+  const q = queue(); q.push(item); setQueue(q);
   render();
   if (navigator.vibrate) navigator.vibrate(30);
-  toast(kind === 'arr' ? 'Arrival recorded' : kind === 'dep' ? 'Departure recorded' : kind === 'halt' ? 'Halt started' : kind === 'complete' ? 'Deployment completed' : 'Undone');
-  await flush(); busyAct = false;
+  toast(kind === 'arr' ? T('tArr') : kind === 'dep' ? (nav ? T('tDepNav') : T('tDep')) : kind === 'halt' ? T('tHalt') : kind === 'complete' ? T('tDone') : T('tUndo'));
+  busyAct = false;
+  if (tap) {
+    const p = await tapPos(kind), q2 = queue(), it = q2.find(x => x.at === item.at && x.kind === kind);
+    if (it) { delete it.pend; if (p) { it.lat = +p.lat.toFixed(6); it.lng = +p.lng.toFixed(6); it.acc = Math.round(p.acc || 0); } setQueue(q2); }
+  }
+  await flush();
   if (kind === 'complete') stopShare();
   if (kind === 'arr' || kind === 'dep') pingNow();
 }
@@ -181,33 +297,41 @@ async function flush() {
     let q = queue();
     while (q.length) {
       const it = q[0];
-      try { const v = await DB.rpc('team_event', { p_token: TOKEN, p_stop: it.stop, p_kind: it.kind, p_at: it.at }); if (v) V = v; }
-      catch (e) { if (/not valid|Unknown/i.test(e.message)) { toast(e.message, true); } else break; }
+      if (it.pend && Date.now() - it.pend < 15000) break;               // still waiting for the phone's location
+      const args = { p_token: TOKEN, p_stop: it.stop, p_kind: it.kind, p_at: it.at };
+      if (it.lat != null && !oldRpc) Object.assign(args, { p_lat: it.lat, p_lng: it.lng, p_acc: it.acc ?? null });
+      try { const v = await DB.rpc('team_event', args); if (v) V = v; }
+      catch (e) {
+        /* database not updated yet (setup.sql not re-run): send the tap without the location */
+        if (args.p_lat != null && /functions are missing|PGRST202|Could not find the function/i.test(e.message + ' ' + ((e.raw && e.raw.code) || ''))) { oldRpc = true; continue; }
+        if (/not valid|Unknown/i.test(e.message)) { toast(e.message, true); } else break;
+      }
       q = queue(); q.shift(); setQueue(q);
     }
-  } finally { flushing = false; if (V) { try { localStorage.setItem(LK, JSON.stringify(V)); } catch (e) {} render(); } }
+  } finally { flushing = false; if (V) { try { localStorage.setItem(LK, JSON.stringify(V)); } catch (e) { /* ignore */ } render(); } }
 }
 /* live location (only with consent, only while the page is open) */
 function startShare() {
-  if (!('geolocation' in navigator)) { toast('This phone/browser cannot share location.', true); return; }
+  if (!('geolocation' in navigator)) { toast(T('noGeo'), true); return; }
   watchId = navigator.geolocation.watchPosition(p => {
     const c = p.coords, nowT = Date.now(), moved = lastPingPos ? AP.haversine(lastPingPos, [c.latitude, c.longitude]) : 1;
     if (nowT - lastPing < 30000 && moved < 0.15) return;
-    lastPing = nowT; lastPingPos = [c.latitude, c.longitude];
+    lastPing = nowT; lastPingPos = [c.latitude, c.longitude, c.accuracy];
     DB.rpc('team_ping', { p_token: TOKEN, p_lat: c.latitude, p_lng: c.longitude, p_acc: c.accuracy }).catch(() => {});
-  }, err => { toast(err.code === 1 ? 'Location permission was denied. Allow location for this site in the browser settings.' : 'Could not get location: ' + err.message, true); stopShare(); render(); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
-  try { localStorage.setItem('ap-team-share-' + TOKEN, '1'); } catch (e) {}
+  }, err => { toast(err.code === 1 ? T('geoDenied') : T('geoErr') + err.message, true); stopShare(); render(); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+  try { localStorage.setItem('ap-team-share-' + TOKEN, '1'); } catch (e) { /* ignore */ }
 }
-function stopShare() { if (watchId != null) navigator.geolocation.clearWatch(watchId); watchId = null; try { localStorage.removeItem('ap-team-share-' + TOKEN); } catch (e) {} }
-function pingNow() { if (watchId == null) return; lastPing = 0; navigator.geolocation.getCurrentPosition(p => { lastPing = Date.now(); lastPingPos = [p.coords.latitude, p.coords.longitude]; DB.rpc('team_ping', { p_token: TOKEN, p_lat: p.coords.latitude, p_lng: p.coords.longitude, p_acc: p.coords.accuracy }).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 20000 }); }
-async function keepAwake(on) { try { if (on) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } else if (wake) { await wake.release(); wake = null; } } catch (e) { toast('Could not keep the screen on.', true); } }
+function stopShare() { if (watchId != null) navigator.geolocation.clearWatch(watchId); watchId = null; try { localStorage.removeItem('ap-team-share-' + TOKEN); } catch (e) { /* ignore */ } }
+function pingNow() { if (watchId == null) return; lastPing = 0; navigator.geolocation.getCurrentPosition(p => { lastPing = Date.now(); lastPingPos = [p.coords.latitude, p.coords.longitude, p.coords.accuracy]; DB.rpc('team_ping', { p_token: TOKEN, p_lat: p.coords.latitude, p_lng: p.coords.longitude, p_acc: p.coords.accuracy }).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 20000 }); }
+async function keepAwake(on) { try { if (on) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } else if (wake) { await wake.release(); wake = null; } } catch (e) { toast(T('noAwake'), true); } }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { load(true); if (wake === null && $('awake') && $('awake').checked) keepAwake(true); } });
 window.addEventListener('hashchange', () => location.reload());
 window.addEventListener('online', () => { $('offline').classList.remove('show'); flush(); });
 window.addEventListener('offline', () => $('offline').classList.add('show'));
 if (!navigator.onLine) $('offline').classList.add('show');
 setInterval(() => { if (!document.hidden) load(true); }, 60000);
-try { if (localStorage.getItem('ap-team-share-' + TOKEN)) startShare(); } catch (e) {}
+setInterval(() => { if (!document.hidden && queue().some(x => x.pend)) flush(); }, 5000);
+try { if (localStorage.getItem('ap-team-share-' + TOKEN)) startShare(); } catch (e) { /* ignore */ }
 load();
 </script>
 <script>

@@ -704,11 +704,13 @@ function openDep(d, preset) {
 const teamUrl = d => new URL(`team.html#t=${d.token}`, location.href).href;
 function qrCanvas(text, caption, scale = 8) {
   const q = qrcode(0, 'M'); q.addData(text); q.make();
-  const n = q.getModuleCount(), m = 4, cap = caption ? caption.length * 22 + 14 : 0, c = document.createElement('canvas');
-  c.width = (n + m * 2) * scale; c.height = (n + m * 2) * scale + cap;
-  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#000';
-  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) g.fillRect((k + m) * scale, (r + m) * scale, scale, scale);
-  if (caption) { g.fillStyle = '#0b1220'; g.textAlign = 'center'; caption.forEach((t, i) => { g.font = `${i ? 500 : 700} ${i ? 17 : 20}px "Exo 2", Arial, sans-serif`; g.fillText(t, c.width / 2, (n + m * 2) * scale + 6 + 22 * (i + 1) - 4); }); }
+  const n = q.getModuleCount(), m = 4, cap = caption ? caption.length * 22 + 14 : 0, c = document.createElement('canvas'), qw = (n + m * 2) * scale;
+  const fnt = i => `${i ? 500 : 700} ${i ? 17 : 20}px "Exo 2", Arial, sans-serif`, mg = c.getContext('2d');
+  const tw = caption ? Math.max(...caption.map((t, i) => { mg.font = fnt(i); return mg.measureText(t).width; })) + 32 : 0;
+  c.width = Math.max(qw, Math.ceil(tw)); c.height = qw + cap;
+  const g = c.getContext('2d'), ox = Math.round((c.width - qw) / 2); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#000';
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) g.fillRect(ox + (k + m) * scale, (r + m) * scale, scale, scale);
+  if (caption) { g.fillStyle = '#0b1220'; g.textAlign = 'center'; caption.forEach((t, i) => { g.font = fnt(i); g.fillText(t, c.width / 2, qw + 6 + 22 * (i + 1) - 4); }); }
   return c;
 }
 async function openQR(d0) {
@@ -724,7 +726,7 @@ async function openQR(d0) {
   const ph = p => p && p.phone ? String(p.phone).replace(/\D/g, '').replace(/^0+/, '').replace(/^(\d{10})$/, '91$1') : '';
   openModal(`<h2>QR for the team</h2><div class="qrwrap"><div id="qrBox"></div><div>
     <p style="margin-top:0"><b>${esc(a.reg_no || '')}</b> · ${esc(niceDate(d.dep_date))} · ${esc(d.start_time)}–${esc(d.end_time)}<br>${esc((d.plan && d.plan.route_name) || '')} · ${(d.plan.stops || []).length} stops<br>Pilot: ${esc(pilot ? pilot.name : '–')} · EMT: ${esc(emt ? emt.name : '–')}</p>
-    <p class="note">The team scans this (or opens the link) on a phone. No login needed. The page shows only this deployment: next stop, times, a Navigate button that opens Google Maps, and Reached / Depart buttons that record the actual times.</p>
+    <p class="note">The team scans this (or opens the link) on a phone. No login needed. The page shows only this deployment: next stop, times, a Navigate button that opens Google Maps, and Reached / Depart buttons that record the actual times and where the phone was. Depart also opens Google Maps to the next point. The crew can switch the page to Hindi.</p>
     <input type="text" readonly value="${esc(url)}" id="qrUrl" style="margin:6px 0">
     <div class="row">
       <button class="btn primary" id="qrPng">Download QR</button>
@@ -743,7 +745,7 @@ async function openQR(d0) {
   $('qrPng').onclick = () => cv.toBlob(b => download(fname, b));
   $('qrCopy').onclick = async () => { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch (e) { $('qrUrl').select(); document.execCommand('copy'); toast('Link copied'); } };
   if ($('qrShare')) $('qrShare').onclick = () => cv.toBlob(async b => { try { const f = new File([b], fname, { type: 'image/png' }); await navigator.share(navigator.canShare && navigator.canShare({ files: [f] }) ? { files: [f], text: msg } : { text: msg }); } catch (e) {} });
-  $('qrPrint').onclick = () => { $('printArea').innerHTML = `<div style="text-align:center;padding-top:20mm"><h1>${esc(CFG.ORG_NAME || '')} · Ambulance deployment</h1><img src="${cv.toDataURL()}" style="width:110mm"><p style="font-size:14px">Scan with the phone camera to open your route.<br>${esc(url)}</p></div>`; window.print(); };
+  $('qrPrint').onclick = () => { $('printArea').innerHTML = `<div style="text-align:center;padding-top:16mm"><h1>${esc(CFG.ORG_NAME || '')} · Ambulance deployment</h1><p style="font-size:15px;margin:4px 0 10px"><b>${esc(a.reg_no || '')}</b> · ${esc(niceDate(d.dep_date))} · ${esc(d.start_time)}–${esc(d.end_time)}<br>${esc((d.plan && d.plan.route_name) || '')} · ${(d.plan.stops || []).length} stops · Pilot: ${esc(pilot ? pilot.name : '–')} · EMT: ${esc(emt ? emt.name : '–')}</p><img src="${cv.toDataURL()}" style="width:110mm;height:auto" alt="QR code"><p style="font-size:14px">Scan with the phone camera to open your route.<br><span style="font-size:11px;word-break:break-all">${esc(url)}</span></p></div>`; printNow(); };
   $('qrReset').onclick = async () => { if (!confirm('Make a new link? The current QR and link will stop working.')) return; const r = await guard(() => DB.update('deployments', d.id, { token: DB.token() }), 'Updating…'); if (r) { mergeDeps([r]); openQR(r); toast('New link made. Share the new QR.'); } };
 }
 
@@ -794,7 +796,7 @@ async function renderLiveDetail() {
   const box = $('liveDetail'), d = S.live.find(x => x.id === S.liveSel);
   if (!d) { box.style.display = 'none'; return; }
   const a = ambById(d.ambulance_id) || {}, { pi, off } = liveInfo(d);
-  pi.rows.forEach(r => { L.marker([r.stop.lat, r.stop.lng], { icon: pinIcon(r.i + 1, r.st === 'done' ? 'done' : r.st === 'at' ? 'at' : r.i === 0 ? 'first' : '') }).bindTooltip(`<div class="tip"><b>${r.i + 1}. ${esc(r.stop.name)}</b><br>Planned ${istHM(r.stop.arr)}–${istHM(r.stop.dep)} · halt ${r.stop.halt ?? '–'} min${r.stop.km != null ? `<br>From previous: ${fmt(r.stop.km)} km · ${Math.round(r.stop.travel || 0)} min` : ''}<br>${r.actArr ? `Actual ${istHM(r.actArr)}${r.actDep ? '–' + istHM(r.actDep) : ' (at stop)'} · ${esc(delayText(r.arrDelay))}` : r.st === 'done' ? 'Done' : `Expected ${istHM(r.etaArr)}`}${r.stop.remarks ? `<br><i>${esc(r.stop.remarks)}</i>` : ''}</div>`).addTo(lG.stops); });
+  pi.rows.forEach(r => { L.marker([r.stop.lat, r.stop.lng], { icon: pinIcon(r.i + 1, r.st === 'done' ? 'done' : r.st === 'at' ? 'at' : r.i === 0 ? 'first' : '') }).bindTooltip(`<div class="tip"><b>${r.i + 1}. ${esc(r.stop.name)}</b><br>Planned ${istHM(r.stop.arr)}–${istHM(r.stop.dep)} · halt ${r.stop.halt ?? '–'} min${r.stop.km != null ? `<br>From previous: ${fmt(r.stop.km)} km · ${Math.round(r.stop.travel || 0)} min` : ''}<br>${r.actArr ? `Actual ${istHM(r.actArr)}${r.actDep ? '–' + istHM(r.actDep) : ' (at stop)'} · ${esc(delayText(r.arrDelay))}${r.llArr ? `<br>Reached marked ${offTxt(r.offArr)} from the point${r.llArr[2] ? ` (GPS ±${Math.round(r.llArr[2])} m)` : ''}` : '<br>Reached marked without phone location'}` : r.st === 'done' ? 'Done' : `Expected ${istHM(r.etaArr)}`}${r.stop.remarks ? `<br><i>${esc(r.stop.remarks)}</i>` : ''}</div>`).addTo(lG.stops); });
   box.style.display = '';
   box.innerHTML = `<h3>${esc(a.reg_no || '')} · ${esc(d.plan.route_name || '')}<span class="aside"><a href="${esc(teamUrl(d))}" target="_blank" rel="noopener">team page</a></span></h3>
     ${off ? `<p class="warn">Last location is ${fmt(off)} km from the planned route.</p>` : ''}
@@ -995,10 +997,19 @@ $('tplBtn').addEventListener('click', () => {
 const slug = s => String(s || 'export').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'export';
 const toCSV = rows => rows.map(r => r.map(v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(',')).join('\n');
 const shortId = id => String(id || '').slice(0, 8).toUpperCase();
+/* print only after every image in the print area has loaded (a QR printed too early comes out blank) */
+async function printNow() {
+  const imgs = [...$('printArea').querySelectorAll('img')];
+  await Promise.all(imgs.map(i => (i.decode ? i.decode() : Promise.resolve()).catch(() => new Promise(res => { if (i.complete) res(); else { i.onload = i.onerror = res; } }))));
+  await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+  window.print();
+}
+const llTxt = ll => ll ? `${(+ll[0]).toFixed(6)}, ${(+ll[1]).toFixed(6)}` : '';
+const offTxt = m => m == null ? '' : m < 1000 ? `${Math.round(m)} m` : `${fmt(m / 1000)} km`;
 function exportRows(deps) {
   deps = deps.slice().sort((a, b) => a.dep_date.localeCompare(b.dep_date) || a.start_time.localeCompare(b.start_time));
   const sum = [['Deployment ID', 'Date', 'Ambulance', 'Type', 'Driver / pilot', 'Pilot phone', 'Paramedic / EMT', 'EMT phone', 'Route', 'Starting location', 'Shift start', 'Shift end', 'Total distance (km)', 'Total driving time (min)', 'Total halt time (min)', 'Total deployment duration (min)', 'Total locations', 'Total population covered', 'Population basis', 'Status']];
-  const det = [['Deployment ID', 'Date', 'Ambulance', 'Point', 'Location', 'Latitude', 'Longitude', 'Population', 'Road distance from previous (km)', 'Planned speed (km/h)', 'Expected travel time (min)', 'Planned arrival', 'Planned departure', 'Halt (min)', 'Actual arrival', 'Actual departure', 'Delay at arrival (min)', 'Status', 'Next destination', 'Remarks']];
+  const det = [['Deployment ID', 'Date', 'Ambulance', 'Point', 'Location', 'Latitude', 'Longitude', 'Population', 'Road distance from previous (km)', 'Planned speed (km/h)', 'Expected travel time (min)', 'Planned arrival', 'Planned departure', 'Halt (min)', 'Actual arrival', 'Actual departure', 'Delay at arrival (min)', 'Reached: phone location', 'Reached: distance from the point (m)', 'Departed: phone location', 'Status', 'Next destination', 'Remarks']];
   const ros = [['Deployment date', 'Ambulance', 'Ambulance type', 'Driver / pilot', 'Paramedic / EMT', 'Assigned route', 'Shift start', 'Shift end', 'Status', 'Team link']];
   const pop = [['Deployment ID', 'Date', 'Route', 'Point', 'Location', 'Population', 'Population source', 'Population updated', 'Coverage radius (km)', 'Overlaps with points', 'Unique population estimate']];
   deps.forEach(d => {
@@ -1008,7 +1019,7 @@ function exportRows(deps) {
     const pi = progressInfo(pl, d.progress);
     st.forEach((s, i) => {
       const r = pi.rows[i];
-      det.push([id, d.dep_date, a.reg_no || '', i + 1, s.name, s.lat, s.lng, s.pop ?? '', s.km ?? (i ? '' : 'Start'), s.speed ?? '', s.travel != null ? Math.round(s.travel) : '', s.arr ? istHM(s.arr) : '', s.dep ? istHM(s.dep) : '', s.halt ?? '', r.actArr ? istHM(r.actArr) : '', r.actDep ? istHM(r.actDep) : '', r.arrDelay != null ? Math.round(r.arrDelay) : '', r.st === 'done' ? 'Done' : r.st === 'at' ? 'At location' : 'Pending', st[i + 1] ? st[i + 1].name : '', s.remarks || '']);
+      det.push([id, d.dep_date, a.reg_no || '', i + 1, s.name, s.lat, s.lng, s.pop ?? '', s.km ?? (i ? '' : 'Start'), s.speed ?? '', s.travel != null ? Math.round(s.travel) : '', s.arr ? istHM(s.arr) : '', s.dep ? istHM(s.dep) : '', s.halt ?? '', r.actArr ? istHM(r.actArr) : '', r.actDep ? istHM(r.actDep) : '', r.arrDelay != null ? Math.round(r.arrDelay) : '', llTxt(r.llArr), r.offArr != null ? Math.round(r.offArr) : '', llTxt(r.llDep), r.st === 'done' ? 'Done' : r.st === 'at' ? 'At location' : 'Pending', st[i + 1] ? st[i + 1].name : '', s.remarks || '']);
       pop.push([id, d.dep_date, pl.route_name || '', i + 1, s.name, s.pop ?? '', s.pop_src || '', s.pop_date || '', s.radius ?? '', (s.overlaps || []).map(k => k + 1).join(', ') || 'None', s.unique != null ? Math.round(s.unique) : '']);
     });
   });
@@ -1035,7 +1046,7 @@ function printDeps(deps) {
       <h2>Schedule</h2><table><tr><th>#</th><th>Location</th><th>Arrive</th><th>Leave</th><th>Halt</th><th>Road km</th><th>Travel</th><th>Population</th><th>Actual</th><th>Remarks</th></tr>
       ${(pl.stops || []).map((s, i) => `<tr><td>${i + 1}</td><td>${esc(s.name)}<br><span style="color:#555">${(+s.lat).toFixed(5)}, ${(+s.lng).toFixed(5)}</span></td><td>${istHM(s.arr)}</td><td>${istHM(s.dep)}</td><td>${s.halt ?? ''} min</td><td>${s.km != null ? fmt(s.km) : 'Start'}</td><td>${s.travel != null ? Math.round(s.travel) + ' min' : ''}</td><td>${s.pop != null ? fmtInt(s.pop) : ''}</td><td>${pi.rows[i].actArr ? istHM(pi.rows[i].actArr) : ''}${pi.rows[i].actDep ? '–' + istHM(pi.rows[i].actDep) : ''}</td><td>${esc(s.remarks || '')}</td></tr>`).join('')}</table></div>`;
   }).join('');
-  setTimeout(() => window.print(), 150);
+  printNow();
 }
 $('exportBtn').addEventListener('click', () => {
   const days = weekDays(S.day);
@@ -1776,7 +1787,7 @@ $('routePrint').addEventListener('click', () => {
   const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
   const head = S.view === 'one' ? '' : `<div style="margin-bottom:12px"><h1>${S.view === 'amb' ? `Routes of ${esc((ambById(S.viewAmb) || {}).reg_no || '')}` : 'All routes'}</h1><div>${esc(CFG.ORG_NAME || '')} · ${now} IST · ${items.length} route${items.length > 1 ? 's' : ''}</div>${$('mLegend').classList.contains('show') ? `<div style="margin-top:6px">${$('mLegend').innerHTML}</div>` : ''}</div>`;
   $('printArea').innerHTML = head + items.map(it => routeReportHTML(it.r, it.start, it.label)).join('');
-  setTimeout(() => window.print(), 150);
+  printNow();
 });
 $('csvBtn').addEventListener('click', () => {
   const items = viewItems(); if (!items.length) { toast('Open a route with stops first.', true); return; }

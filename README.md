@@ -59,6 +59,7 @@ Security model:
 - **Map & scenario** (same layout as Radius coverage): base maps (same list, with automatic fallback), overlay (response-time heatmap from the nearest stop, hexagon grid, population density), coverage shape per route (circle or hexagon), Show routes, toggles, Share on WhatsApp, Copy share link (opens the route for any signed-in admin), PDF report, Export stops (CSV), Save / Load scenario and Reset map to default.
 - Deployment editor warns when the route ends after the shift.
 - Team page: “Open the remaining stops in Google Maps” (up to 10 at a time).
+- Team page: English / हिंदी switch (top right, remembered on the phone); **Depart & navigate** records the departure and opens Google Maps to the next point in one tap; Reached / Halt / Depart also save where the phone was (shown in Live and in the Excel export as location and distance from the point). Needs setup.sql re-run once.
 
 ## Files
 
