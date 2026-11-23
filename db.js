@@ -82,13 +82,13 @@
       if (!['arr', 'halt', 'dep', 'undo', 'complete'].includes(k)) throw new Error('Unknown action');
       if (k === 'undo') {
         if (pr.done) delete pr.done;
-        else for (let i = n - 1; i >= 0; i--) { const ev = pr.stops[i]; if (ev && Object.keys(ev).length) { for (const kk of ['dep', 'halt', 'arr']) if (ev[kk]) { delete ev[kk]; delete ev[kk + '_ll']; break; } break; } }
+        else for (let i = n - 1; i >= 0; i--) { const ev = pr.stops[i]; if (ev && Object.keys(ev).length) { for (const kk of ['dep', 'halt', 'arr']) if (ev[kk]) { delete ev[kk]; delete ev[kk + '_ll']; if (kk === 'halt') { delete ev.arr; delete ev.arr_ll; } break; } break; } }
       } else if (k === 'complete') pr.done = at;
       else {
         if (a.p_stop == null || a.p_stop < 0 || a.p_stop >= n) throw new Error('Unknown stop');
         const ev = pr.stops[a.p_stop] = pr.stops[a.p_stop] || {};
         const ll = a.p_lat != null && a.p_lng != null ? [+(+a.p_lat).toFixed(6), +(+a.p_lng).toFixed(6), Math.round(+a.p_acc || 0)] : null;
-        if (!ev[k]) { ev[k] = at; if (ll) ev[k + '_ll'] = ll; } if ((k === 'halt' || k === 'dep') && !ev.arr) { ev.arr = at; if (ll) ev.arr_ll = ll; }
+        if (!ev[k]) { ev[k] = at; if (ll) ev[k + '_ll'] = ll; } if ((k === 'halt' || k === 'dep') && !ev.arr) { ev.arr = at; if (ll) ev.arr_ll = ll; } if (ev.arr && !ev.halt) ev.halt = ev.arr;
         if (ll) Object.assign(d, { last_lat: ll[0], last_lng: ll[1], last_acc: ll[2], last_seen: now() });
       }
       d.progress = pr;

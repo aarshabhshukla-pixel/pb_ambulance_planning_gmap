@@ -1,7 +1,7 @@
 // Ambulance Planner – service worker
 // Caches the app itself so it opens instantly and works offline.
 // Map tiles and place search always come from the network (they are not cached).
-const VERSION = 'ambulance-planner-v11';
+const VERSION = 'ambulance-planner-v14';
 const SHELL = [
   './',
   'index.html',
@@ -63,4 +63,14 @@ self.addEventListener('fetch', e => {
       return res;
     }))
   );
+});
+
+// Departure alarm notification: tapping it brings the crew page back
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || 'team.html';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const hit = list.find(c => c.url.split('#')[0].endsWith('team.html') || c.url.includes('/team'));
+    return hit ? hit.focus() : self.clients.openWindow(url);
+  }));
 });

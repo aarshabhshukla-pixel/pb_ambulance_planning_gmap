@@ -65,6 +65,12 @@ body.hi{--font:'Exo 2',"Noto Sans Devanagari","Nirmala UI","Mangal",system-ui,sa
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 16px;border-radius:12px;font-weight:600;font-size:14.5px;opacity:0;transition:.25s;pointer-events:none;max-width:92vw;z-index:10}
 .toast.show{opacity:1}
 .toast.bad{background:var(--bad)}
+.alarm{position:fixed;inset:0;background:rgba(11,23,48,.72);z-index:20;display:grid;place-items:center;padding:20px}
+.alarm-in{background:var(--surface);border-radius:18px;padding:22px;max-width:420px;width:100%;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.alarm-ic{font-size:46px;animation:shake .6s infinite}
+.alarm-msg{font-size:21px;font-weight:700;margin:8px 0 4px;line-height:1.3}
+.alarm.urgent .alarm-in{border:4px solid var(--brand)}
+@keyframes shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-14deg)}75%{transform:rotate(14deg)}}
 </style>
 </head>
 <body>
@@ -82,6 +88,7 @@ const { esc, fmt, istHM, navUrl, progressInfo, ago } = AP;
 const $ = id => document.getElementById(id);
 const TOKEN = (new URLSearchParams(location.hash.replace(/^#/, '')).get('t') || new URLSearchParams(location.search).get('t') || '').trim();
 const QK = 'ap-team-q-' + TOKEN, LK = 'ap-team-last-' + TOKEN;
+let geoWarned = false;
 let V = null, busyAct = false, watchId = null, lastPing = 0, lastPingPos = null, wake = null, oldRpc = false, posCache = null, posAsk = 0;
 
 /* ---------- English / Hindi ---------- */
@@ -98,6 +105,7 @@ const TX = {
     deployment: 'Deployment', completed: 'Completed ✓', finished: t => `Finished at ${t}. Thank you.`, undoMistake: 'Undo (tapped by mistake)',
     allDone: n => `All ${n} stops done`, finish: 'Finish the deployment', complete: 'Complete deployment', undoLast: 'Undo last tap',
     atStop: (i, n) => `At stop ${i} of ${n}`, firstStop: n => `First stop · 1 of ${n}`, nextStop: (i, n) => `Next stop · ${i} of ${n}`,
+    haltUntil: t => `ends ${t}`, haltOn: t => `Halt running since ${t} (started when you tapped Reached).`,
     reachedAt: 'Reached at', reachBy: 'Reach by', expected: t => `expected ${t}`, leaveAt: 'Leave at', halt: m => `halt ${m} min`, haltStarted: t => `halt started ${t}`,
     running: x => `Running ${x}`, onTime: 'on time', late: m => `${m} min late`, early: m => `${m} min early`,
     startHalt: 'Start halt', departNav: n => `Depart & navigate → ${n}`, departLast: 'Depart (last stop)',
@@ -107,9 +115,16 @@ const TX = {
     share: 'Share live location with the control room',
     shareNote: 'Only while this page is open. Your location is sent to your hospital’s control room for this deployment and stops when you untick this or finish.',
     lastSent: t => ` Last sent ${t}.`, awake: 'Keep the screen on', waiting: n => `${n} tap${n > 1 ? 's' : ''} waiting to be sent · `, updated: 'Updated', refresh: 'Refresh',
-    tArr: 'Arrival recorded', tDep: 'Departure recorded', tDepNav: 'Departure recorded · opening Google Maps', tHalt: 'Halt started', tDone: 'Deployment completed', tUndo: 'Undone',
+    tArr: 'Arrival recorded · halt started', tDep: 'Departure recorded', tDepNav: 'Departure recorded · opening Google Maps', tHalt: 'Halt started', tDone: 'Deployment completed', tUndo: 'Undone',
     cUndo: 'Undo your last tap?', cDone: 'Complete this deployment?',
     noGeo: 'This phone/browser cannot share location.', geoDenied: 'Location permission was denied. Allow location for this site in the browser settings.', geoErr: 'Could not get location: ',
+    alarmsTitle: 'Departure alarms', alarmsOn: 'On: at each stop it rings 20 min and 10 min before the planned departure, and at departure time.', alarmsOff: 'Off',
+    alarmsBtn: 'Turn on departure alarms', alarmsSound: 'Tap once to allow the alarm sound', alarmsStop: 'Turn off alarms',
+    alarmsKeep: 'Keep this page open on the phone (screen stays on) so the alarm can ring. If the phone locks or the page is closed, it rings as soon as the page is opened again.',
+    alarmsNoNotif: 'Phone notifications are blocked for this site, so the alarm rings only on this page.',
+    al20: (s, t) => `20 minutes to departure from ${s} (${t})`, al10: (s, t) => `10 minutes to departure from ${s} (${t})`,
+    al0: (s, t) => `Time to depart from ${s} now (${t})`, alPast: (s, t) => `Planned departure from ${s} was ${t}: depart now`,
+    alOk: 'OK', alTitle: 'Ambulance departure', nextAlarm: (w, t) => `Next alarm: ${w} at ${t}`, w20: '20 min warning', w10: '10 min warning', w0: 'depart now',
     noAwake: 'Could not keep the screen on.', locTip: 'Allow location when the phone asks: it saves where you were when you tap Reached and Depart.', langBtn: 'हिंदी'
   },
   hi: {
@@ -124,6 +139,7 @@ const TX = {
     deployment: 'ड्यूटी', completed: 'पूरा ✓', finished: t => `${t} पर पूरा हुआ। धन्यवाद।`, undoMistake: 'वापस लें (गलती से टैप हुआ)',
     allDone: n => `सभी ${n} स्टॉप पूरे`, finish: 'ड्यूटी पूरी करें', complete: 'ड्यूटी पूरी करें', undoLast: 'पिछला टैप वापस लें',
     atStop: (i, n) => `स्टॉप ${i} / ${n} पर`, firstStop: n => `पहला स्टॉप · 1 / ${n}`, nextStop: (i, n) => `अगला स्टॉप · ${i} / ${n}`,
+    haltUntil: t => `${t} तक`, haltOn: t => `हॉल्ट ${t} से चल रहा है (पहुँचे टैप करते ही शुरू)।`,
     reachedAt: 'पहुँचे', reachBy: 'पहुँचना है', expected: t => `अनुमानित ${t}`, leaveAt: 'निकलना है', halt: m => `हॉल्ट ${m} मिनट`, haltStarted: t => `हॉल्ट शुरू ${t}`,
     running: x => `स्थिति: ${x}`, onTime: 'समय पर', late: m => `${m} मिनट देर`, early: m => `${m} मिनट जल्दी`,
     startHalt: 'हॉल्ट शुरू करें', departNav: n => `निकलें और नेविगेट करें → ${n}`, departLast: 'निकलें (आखिरी स्टॉप)',
@@ -133,9 +149,16 @@ const TX = {
     share: 'कंट्रोल रूम के साथ लाइव लोकेशन शेयर करें',
     shareNote: 'केवल जब यह पेज खुला हो। आपकी लोकेशन इस ड्यूटी के लिए अस्पताल के कंट्रोल रूम को भेजी जाती है और टिक हटाने या ड्यूटी पूरी करने पर बंद हो जाती है।',
     lastSent: t => ` आखिरी बार भेजा: ${t}।`, awake: 'स्क्रीन चालू रखें', waiting: n => `${n} टैप भेजना बाकी · `, updated: 'अपडेट', refresh: 'रीफ़्रेश',
-    tArr: 'पहुँचना दर्ज हुआ', tDep: 'निकलना दर्ज हुआ', tDepNav: 'निकलना दर्ज हुआ · Google Maps खुल रहा है', tHalt: 'हॉल्ट शुरू हुआ', tDone: 'ड्यूटी पूरी हुई', tUndo: 'वापस लिया गया',
+    tArr: 'पहुँचना दर्ज हुआ · हॉल्ट शुरू', tDep: 'निकलना दर्ज हुआ', tDepNav: 'निकलना दर्ज हुआ · Google Maps खुल रहा है', tHalt: 'हॉल्ट शुरू हुआ', tDone: 'ड्यूटी पूरी हुई', tUndo: 'वापस लिया गया',
     cUndo: 'पिछला टैप वापस लें?', cDone: 'यह ड्यूटी पूरी करें?',
     noGeo: 'यह फ़ोन/ब्राउज़र लोकेशन शेयर नहीं कर सकता।', geoDenied: 'लोकेशन की अनुमति नहीं मिली। ब्राउज़र सेटिंग में इस साइट के लिए लोकेशन चालू करें।', geoErr: 'लोकेशन नहीं मिल सकी: ',
+    alarmsTitle: 'निकलने के अलार्म', alarmsOn: 'चालू: हर स्टॉप पर योजना वाले निकलने के समय से 20 मिनट और 10 मिनट पहले, और ठीक समय पर बजेगा।', alarmsOff: 'बंद',
+    alarmsBtn: 'निकलने के अलार्म चालू करें', alarmsSound: 'अलार्म की आवाज़ चालू करने के लिए एक बार टैप करें', alarmsStop: 'अलार्म बंद करें',
+    alarmsKeep: 'अलार्म बजने के लिए यह पेज फ़ोन पर खुला रखें (स्क्रीन चालू रहेगी)। फ़ोन लॉक हो या पेज बंद हो, तो पेज दोबारा खोलते ही बजेगा।',
+    alarmsNoNotif: 'इस साइट के लिए फ़ोन नोटिफ़िकेशन बंद हैं, इसलिए अलार्म सिर्फ़ इसी पेज पर बजेगा।',
+    al20: (s, t) => `${s} से निकलने में 20 मिनट बाकी (${t})`, al10: (s, t) => `${s} से निकलने में 10 मिनट बाकी (${t})`,
+    al0: (s, t) => `अब ${s} से निकलने का समय है (${t})`, alPast: (s, t) => `${s} से निकलने का योजना समय ${t} था: अभी निकलें`,
+    alOk: 'ठीक है', alTitle: 'एम्बुलेंस निकलने का समय', nextAlarm: (w, t) => `अगला अलार्म: ${t} पर ${w}`, w20: '20 मिनट की चेतावनी', w10: '10 मिनट की चेतावनी', w0: 'अभी निकलें',
     noAwake: 'स्क्रीन चालू नहीं रखी जा सकी।', locTip: 'फ़ोन पूछे तो लोकेशन की अनुमति दें: पहुँचे और निकलें टैप करते समय आप कहाँ थे, यह सेव होता है।', langBtn: 'English'
   }
 };
@@ -166,7 +189,7 @@ async function load(quiet) {
     const v = await DB.rpc('team_get', { p_token: TOKEN });
     if (!v) return fail(T('invalid'));
     V = v; try { localStorage.setItem(LK, JSON.stringify(v)); } catch (e) { /* ignore */ }
-    render();
+    render(); autoShare();
   } catch (e) {
     if (!V) { try { V = JSON.parse(localStorage.getItem(LK) || 'null'); } catch (er) { /* ignore */ } }
     if (V) { render(); if (!quiet) toast(T('stale'), true); }
@@ -179,8 +202,8 @@ function localProgress() {
   const pr = JSON.parse(JSON.stringify(V.progress || {})); pr.stops = pr.stops || {};
   queue().forEach(q => {
     if (q.kind === 'complete') pr.done = q.at;
-    else if (q.kind === 'undo') { if (pr.done) delete pr.done; else { const n = (V.plan.stops || []).length; for (let i = n - 1; i >= 0; i--) { const e = pr.stops[i]; if (e && Object.keys(e).length) { for (const k of ['dep', 'halt', 'arr']) if (e[k]) { delete e[k]; delete e[k + '_ll']; break; } break; } } } }
-    else { const e = pr.stops[q.stop] = pr.stops[q.stop] || {}; const ll = q.lat != null ? [q.lat, q.lng, q.acc || 0] : null; if (!e[q.kind]) { e[q.kind] = q.at; if (ll) e[q.kind + '_ll'] = ll; } if ((q.kind === 'halt' || q.kind === 'dep') && !e.arr) { e.arr = q.at; if (ll) e.arr_ll = ll; } }
+    else if (q.kind === 'undo') { if (pr.done) delete pr.done; else { const n = (V.plan.stops || []).length; for (let i = n - 1; i >= 0; i--) { const e = pr.stops[i]; if (e && Object.keys(e).length) { for (const k of ['dep', 'halt', 'arr']) if (e[k]) { delete e[k]; delete e[k + '_ll']; if (k === 'halt') { delete e.arr; delete e.arr_ll; } break; } break; } } } }
+    else { const e = pr.stops[q.stop] = pr.stops[q.stop] || {}; const ll = q.lat != null ? [q.lat, q.lng, q.acc || 0] : null; if (!e[q.kind]) { e[q.kind] = q.at; if (ll) e[q.kind + '_ll'] = ll; } if ((q.kind === 'halt' || q.kind === 'dep') && !e.arr) { e.arr = q.at; if (ll) e.arr_ll = ll; } if (e.arr && !e.halt) e.halt = e.arr; }
   });
   return pr;
 }
@@ -206,10 +229,10 @@ function render() {
       ${s.remarks ? `<div class="rem">${esc(s.remarks)}</div>` : ''}
       <div class="times">
         <div><small>${esc(at ? T('reachedAt') : T('reachBy'))}</small><b>${at ? istHM(r.actArr) : istHM(s.arr)}</b><small>${at ? dl(r.arrDelay) : pi.started && Math.abs(pi.delay) >= 3 ? esc(T('expected', istHM(r.etaArr))) : ''}</small></div>
-        <div><small>${esc(T('leaveAt'))}</small><b>${istHM(s.dep)}</b><small>${s.halt ? esc(T('halt', s.halt)) : ''}${at && r.actHalt ? ' · ' + esc(T('haltStarted', istHM(r.actHalt))) : ''}</small></div>
+        <div><small>${esc(T('leaveAt'))}</small><b>${istHM(s.dep)}</b><small>${s.halt ? esc(T('halt', s.halt)) : ''}${at && s.halt ? ' · ' + esc(T('haltUntil', istHM(new Date(new Date(r.actHalt || r.actArr).getTime() + s.halt * 60000).toISOString()))) : ''}</small></div>
       </div>
       ${pi.started && !at ? `<div class="note">${T('running', dl(pi.delay) || esc(T('onTime')))}</div>` : ''}
-      ${at ? `${!r.actHalt ? `<button class="btn sec" data-a="halt">${esc(T('startHalt'))}</button>` : ''}
+      ${at ? `<div class="note" style="margin-top:6px">${esc(T('haltOn', istHM(r.actHalt || r.actArr)))}</div>
               <button class="btn go" data-a="dep">${next ? esc(T('departNav', next.name)) : esc(T('departLast'))}</button>`
             : `<a class="btn nav" href="${navUrl(s.lat, s.lng)}" target="_blank" rel="noopener">${esc(pi.cur === 0 && !pi.started ? T('navFirst') : T('navNext'))}</a>
               <button class="btn main" data-a="arr">${esc(T('reached'))}</button>
@@ -222,10 +245,11 @@ function render() {
   const restFrom = pr.done || pi.allDeparted ? stops.length : pi.rows[pi.cur].st === 'at' ? pi.cur + 1 : pi.cur, rest = stops.slice(restFrom, restFrom + 10);
   const ll = s => `${(+s.lat).toFixed(6)},${(+s.lng).toFixed(6)}`;
   const allUrl = rest.length ? `https://www.google.com/maps/dir/?api=1&destination=${ll(rest[rest.length - 1])}${rest.length > 1 ? `&waypoints=${encodeURIComponent(rest.slice(0, -1).map(ll).join('|'))}` : ''}&travelmode=driving` : '';
-  $('main').innerHTML = cur + `
+  $('main').innerHTML = cur + (pr.done ? '' : alarmCard(pi, stops)) + `
     <div class="card"><div class="lbl">${esc(T('routeDone', pi.nDone, stops.length))}</div><ul class="list">${items}</ul>${allUrl ? `<a class="link" style="display:block;margin-top:10px" href="${allUrl}" target="_blank" rel="noopener">${esc(T('openRest', rest.length))}${stops.length - restFrom > 10 ? esc(T('next10')) : ''}</a>` : ''}</div>
     <div class="card"><label class="loc"><input type="checkbox" id="share"${watchId != null ? ' checked' : ''}><span><b>${esc(T('share'))}</b><br><span class="note">${esc(T('shareNote'))}${lastPing ? esc(T('lastSent', ago(lastPing))) : ''}</span></span></label>
     ${'wakeLock' in navigator ? `<label class="loc" style="margin-top:10px"><input type="checkbox" id="awake"${wake ? ' checked' : ''}><span>${esc(T('awake'))}</span></label>` : ''}</div>
+
     <p class="note" style="text-align:center">${q ? esc(T('waiting', q)) : ''}${esc(T('updated'))} ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} · <button class="link" id="reload">${esc(T('refresh'))}</button></p>`;
 }
 $('main').addEventListener('click', e => {
@@ -241,9 +265,11 @@ $('main').addEventListener('click', e => {
     act(b.dataset.a, nav); return;
   }
   if (e.target.id === 'reload') load();
+  if (e.target.closest('#alOn')) alarmsOn();
+  if (e.target.closest('#alOff')) alarmsOff();
 });
 $('main').addEventListener('change', e => {
-  if (e.target.id === 'share') { if (e.target.checked) startShare(); else stopShare(); }
+  if (e.target.id === 'share') { if (e.target.checked) startShare(); else stopShare(true); }
   if (e.target.id === 'awake') keepAwake(e.target.checked);
 });
 
@@ -289,6 +315,7 @@ async function act(kind, nav) {
   await flush();
   if (kind === 'complete') stopShare();
   if (kind === 'arr' || kind === 'dep') pingNow();
+  if (kind === 'arr' && typeof checkAlarms === 'function') setTimeout(checkAlarms, 800);
 }
 let flushing = false;
 async function flush() {
@@ -318,12 +345,14 @@ function startShare() {
     if (nowT - lastPing < 30000 && moved < 0.15) return;
     lastPing = nowT; lastPingPos = [c.latitude, c.longitude, c.accuracy];
     DB.rpc('team_ping', { p_token: TOKEN, p_lat: c.latitude, p_lng: c.longitude, p_acc: c.accuracy }).catch(() => {});
-  }, err => { toast(err.code === 1 ? T('geoDenied') : T('geoErr') + err.message, true); stopShare(); render(); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+  }, err => { if (!geoWarned) toast(err.code === 1 ? T('geoDenied') : T('geoErr') + err.message, true); geoWarned = true; stopShare(); render(); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
   try { localStorage.setItem('ap-team-share-' + TOKEN, '1'); } catch (e) { /* ignore */ }
 }
-function stopShare() { if (watchId != null) navigator.geolocation.clearWatch(watchId); watchId = null; try { localStorage.removeItem('ap-team-share-' + TOKEN); } catch (e) { /* ignore */ } }
+/* live location is ON by default; it stays off only if the crew unticks it */
+function stopShare(byUser) { if (watchId != null) navigator.geolocation.clearWatch(watchId); watchId = null; if (byUser) { try { localStorage.setItem('ap-team-share-' + TOKEN, '0'); } catch (e) { /* ignore */ } } }
+function autoShare() { let pref = null; try { pref = localStorage.getItem('ap-team-share-' + TOKEN); } catch (e) { /* ignore */ } if (pref !== '0' && watchId == null && !geoWarned && V && !(V.progress && V.progress.done) && V.status !== 'Completed') startShare(); }
 function pingNow() { if (watchId == null) return; lastPing = 0; navigator.geolocation.getCurrentPosition(p => { lastPing = Date.now(); lastPingPos = [p.coords.latitude, p.coords.longitude, p.coords.accuracy]; DB.rpc('team_ping', { p_token: TOKEN, p_lat: p.coords.latitude, p_lng: p.coords.longitude, p_acc: p.coords.accuracy }).catch(() => {}); }, () => {}, { enableHighAccuracy: true, timeout: 20000 }); }
-async function keepAwake(on) { try { if (on) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } else if (wake) { await wake.release(); wake = null; } } catch (e) { toast(T('noAwake'), true); } }
+async function keepAwake(on, quiet) { try { if (on) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } else if (wake) { await wake.release(); wake = null; } } catch (e) { if (!quiet) toast(T('noAwake'), true); } }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { load(true); if (wake === null && $('awake') && $('awake').checked) keepAwake(true); } });
 window.addEventListener('hashchange', () => location.reload());
 window.addEventListener('online', () => { $('offline').classList.remove('show'); flush(); });
@@ -331,8 +360,82 @@ window.addEventListener('offline', () => $('offline').classList.add('show'));
 if (!navigator.onLine) $('offline').classList.add('show');
 setInterval(() => { if (!document.hidden) load(true); }, 60000);
 setInterval(() => { if (!document.hidden && queue().some(x => x.pend)) flush(); }, 5000);
-try { if (localStorage.getItem('ap-team-share-' + TOKEN)) startShare(); } catch (e) { /* ignore */ }
-load();
+
+/* ---------- departure alarms: 20 min, 10 min and 0 min before each planned departure ---------- */
+const AK = 'ap-team-alarm-' + TOKEN, AF = 'ap-team-fired-' + TOKEN;
+let ALARMS = true, actx = null, ringT = 0, firstTap = false;   // alarms are ON by default; off only if the crew turns them off
+try { ALARMS = localStorage.getItem(AK) !== '0'; } catch (e) { /* ignore */ }
+const fired = () => { try { return JSON.parse(localStorage.getItem(AF) || '{}'); } catch (e) { return {}; } };
+const setFired = o => { try { localStorage.setItem(AF, JSON.stringify(o)); } catch (e) { /* ignore */ } };
+function unlockAudio() { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) { /* no sound */ } }
+document.addEventListener('pointerdown', () => { if (ALARMS) unlockAudio(); }, { passive: true });
+/* phones allow sound and notifications only after the first tap on the page */
+document.addEventListener('click', () => {
+  if (!ALARMS) return; unlockAudio();
+  if (!firstTap) { firstTap = true; if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {}); if ('wakeLock' in navigator && !wake) keepAwake(true); if (V) render(); }
+}, true);
+function beep(times, urgent) {
+  if (!actx) return; const t0 = actx.currentTime;
+  for (let i = 0; i < times; i++) for (let k = 0; k < (urgent ? 3 : 2); k++) {
+    const o = actx.createOscillator(), g = actx.createGain(), st = t0 + i * 1.2 + k * 0.22;
+    o.type = 'square'; o.frequency.value = urgent ? 1046 : 880; o.connect(g); g.connect(actx.destination);
+    g.gain.setValueAtTime(0.0001, st); g.gain.exponentialRampToValueAtTime(0.35, st + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, st + 0.18);
+    o.start(st); o.stop(st + 0.2);
+  }
+}
+function stopRing() { clearInterval(ringT); ringT = 0; const b = $('alarmBox'); if (b) b.remove(); if (navigator.vibrate) navigator.vibrate(0); }
+function ring(msg, urgent) {
+  stopRing();
+  const box = document.createElement('div'); box.id = 'alarmBox'; box.className = 'alarm' + (urgent ? ' urgent' : '');
+  box.innerHTML = `<div class="alarm-in"><div class="alarm-ic">⏰</div><div class="alarm-msg">${esc(msg)}</div><button class="btn main" id="alarmOk">${esc(T('alOk'))}</button></div>`;
+  document.body.appendChild(box); $('alarmOk').onclick = stopRing;
+  let n = 0; const once = () => { beep(urgent ? 3 : 2, urgent); if (navigator.vibrate) navigator.vibrate(urgent ? [600, 200, 600, 200, 600] : [400, 150, 400]); if (++n >= (urgent ? 20 : 4)) clearInterval(ringT); };
+  once(); ringT = setInterval(once, 3000);
+  if ('Notification' in window && Notification.permission === 'granted' && navigator.serviceWorker) {
+    navigator.serviceWorker.getRegistration().then(r => r && r.showNotification(T('alTitle'), { body: msg, tag: 'ap-dep-' + TOKEN, renotify: true, requireInteraction: !!urgent, vibrate: [400, 150, 400, 150, 400], icon: 'icon-192.png', badge: 'icon-192.png', data: { url: location.href } })).catch(() => {});
+  }
+}
+/* which departure the alarms are counting down to: the stop the ambulance is at, or the next one on the plan */
+function alarmTarget() {
+  if (!V) return null; const plan = V.plan || {}, stops = plan.stops || [], pr = localProgress(), pi = progressInfo(plan, pr);
+  if (pr.done || pi.allDeparted || pi.cur < 0 || pi.cur >= stops.length) return null;
+  const s = stops[pi.cur]; if (!s.dep) return null;
+  return { i: pi.cur, s, at: pi.rows[pi.cur].st === 'at', dep: new Date(s.dep).getTime() };
+}
+function nextAlarm() {
+  const a = alarmTarget(); if (!a || !a.at) return null; const now = Date.now(), f = fired();
+  for (const [k, m] of [['w20', 20], ['w10', 10], ['w0', 0]]) { const t = a.dep - m * 60000; if (!f[`${a.i}-${k}`] && t > now) return { k, t }; }
+  return null;
+}
+function checkAlarms() {
+  if (!ALARMS) return; const a = alarmTarget(); if (!a || !a.at) return;   // rings only while the ambulance is at the stop
+  const now = Date.now(), f = fired(), key = k => `${a.i}-${k}`, hm = istHM(new Date(a.dep).toISOString());
+  const due = [['w20', 20], ['w10', 10], ['w0', 0]].filter(([k, m]) => !f[key(k)] && now >= a.dep - m * 60000);
+  if (!due.length) return;
+  due.forEach(([k]) => { f[key(k)] = Date.now(); }); setFired(f);
+  const last = due[due.length - 1][0], late = now - a.dep > 5 * 60000;
+  if (last === 'w0') ring(late ? T('alPast', a.s.name, hm) : T('al0', a.s.name, hm), true);
+  else if (now < a.dep - (last === 'w20' ? 10 : 0) * 60000) ring(last === 'w20' ? T('al20', a.s.name, hm) : T('al10', a.s.name, hm), false);
+}
+function alarmCard(pi, stops) {
+  const n = nextAlarm(), notifBlocked = 'Notification' in window && Notification.permission === 'denied';
+  return `<div class="card"><div class="lbl">⏰ ${esc(T('alarmsTitle'))}</div>${ALARMS
+    ? `<div class="note" style="margin:6px 0">${esc(T('alarmsOn'))}${n ? `<br><b>${esc(T('nextAlarm', T(n.k), istHM(new Date(n.t).toISOString())))}</b>` : ''}</div><div class="note">${esc(T('alarmsKeep'))}${notifBlocked ? ' ' + esc(T('alarmsNoNotif')) : ''}</div><button class="link" id="alOff">${esc(T('alarmsStop'))}</button>`
+    : `<button class="btn sec" id="alOn">🔔 ${esc(T('alarmsBtn'))}</button>`}${ALARMS && !(actx && actx.state === 'running') ? `<button class="btn sec" id="alOn">🔔 ${esc(T('alarmsSound'))}</button>` : ''}</div>`;
+}
+async function alarmsOn() {
+  ALARMS = true; try { localStorage.setItem(AK, '1'); } catch (e) { /* ignore */ }
+  unlockAudio(); beep(1, false);
+  /* times that are already past when alarms are switched on do not ring */
+  const a = alarmTarget(); if (a) { const f = fired(), now = Date.now(); [['w20', 20], ['w10', 10]].forEach(([k, m]) => { if (now >= a.dep - m * 60000) f[`${a.i}-${k}`] = now; }); setFired(f); }
+  if ('wakeLock' in navigator && !wake) keepAwake(true);
+  if ('Notification' in window && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (e) { /* ignore */ } }
+  render(); checkAlarms();
+}
+function alarmsOff() { ALARMS = false; try { localStorage.setItem(AK, '0'); } catch (e) { /* ignore */ } stopRing(); render(); }
+setInterval(checkAlarms, 15000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(checkAlarms, 1500); });
+load().then(() => { setTimeout(checkAlarms, 1000); if (ALARMS && 'wakeLock' in navigator && !wake && !document.hidden) keepAwake(true, true).then(() => { if (V) render(); }); });
 </script>
 <script>
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

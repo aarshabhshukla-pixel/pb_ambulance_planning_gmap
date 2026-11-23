@@ -726,7 +726,7 @@ async function openQR(d0) {
   const ph = p => p && p.phone ? String(p.phone).replace(/\D/g, '').replace(/^0+/, '').replace(/^(\d{10})$/, '91$1') : '';
   openModal(`<h2>QR for the team</h2><div class="qrwrap"><div id="qrBox"></div><div>
     <p style="margin-top:0"><b>${esc(a.reg_no || '')}</b> · ${esc(niceDate(d.dep_date))} · ${esc(d.start_time)}–${esc(d.end_time)}<br>${esc((d.plan && d.plan.route_name) || '')} · ${(d.plan.stops || []).length} stops<br>Pilot: ${esc(pilot ? pilot.name : '–')} · EMT: ${esc(emt ? emt.name : '–')}</p>
-    <p class="note">The team scans this (or opens the link) on a phone. No login needed. The page shows only this deployment: next stop, times, a Navigate button that opens Google Maps, and Reached / Depart buttons that record the actual times and where the phone was. Depart also opens Google Maps to the next point. The crew can switch the page to Hindi.</p>
+    <p class="note">The team scans this (or opens the link) on a phone. No login needed. The page shows only this deployment: next stop, times, a Navigate button that opens Google Maps, and Reached / Depart buttons that record the actual times and where the phone was. Depart also opens Google Maps to the next point. The crew can switch the page to Hindi and turn on departure alarms (20 min, 10 min and at departure time).</p>
     <input type="text" readonly value="${esc(url)}" id="qrUrl" style="margin:6px 0">
     <div class="row">
       <button class="btn primary" id="qrPng">Download QR</button>

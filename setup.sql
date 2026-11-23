@@ -227,7 +227,8 @@ begin
       if last_i >= 0 then
         ev := st -> last_i::text;
         foreach k in array array['dep', 'halt', 'arr'] loop
-          if ev ? k then ev := ev - k - (k || '_ll'); exit; end if;
+          -- the halt starts with Reached, so undoing it also undoes Reached
+          if ev ? k then ev := ev - k - (k || '_ll'); if k = 'halt' then ev := ev - 'arr' - 'arr_ll'; end if; exit; end if;
         end loop;
         st := st || jsonb_build_object(last_i::text, ev);
       end if;
@@ -246,6 +247,8 @@ begin
       ev := ev || jsonb_build_object('arr', at);
       if ll is not null then ev := ev || jsonb_build_object('arr_ll', ll); end if;
     end if;
+    -- the halt starts automatically when Reached is tapped
+    if ev ? 'arr' and not ev ? 'halt' then ev := ev || jsonb_build_object('halt', ev -> 'arr'); end if;
     st := st || jsonb_build_object(p_stop::text, ev);
     pr := pr || jsonb_build_object('stops', st);
   end if;
