@@ -105,10 +105,10 @@ const TX = {
     deployment: 'Deployment', completed: 'Completed ✓', finished: t => `Finished at ${t}. Thank you.`, undoMistake: 'Undo (tapped by mistake)',
     allDone: n => `All ${n} stops done`, finish: 'Finish the deployment', complete: 'Complete deployment', undoLast: 'Undo last tap',
     atStop: (i, n) => `At stop ${i} of ${n}`, firstStop: n => `First stop · 1 of ${n}`, nextStop: (i, n) => `Next stop · ${i} of ${n}`,
-    haltUntil: t => `ends ${t}`, haltOn: t => `Halt running since ${t} (started when you tapped Reached).`,
+    haltUntil: t => `ends ${t}`, haltOn: t => `Halt running since ${t}.`,
     reachedAt: 'Reached at', reachBy: 'Reach by', expected: t => `expected ${t}`, leaveAt: 'Leave at', halt: m => `halt ${m} min`, haltStarted: t => `halt started ${t}`,
     running: x => `Running ${x}`, onTime: 'on time', late: m => `${m} min late`, early: m => `${m} min early`,
-    startHalt: 'Start halt', departNav: n => `Depart & navigate → ${n}`, departLast: 'Depart (last stop)',
+    startHalt: 'Start halt', departNav: n => `Departure to next stop → ${n}`, departLast: 'Depart (last stop)', startTrip: 'Start trip', startPoint: n => `Start point · 1 of ${n}`, atStart: n => `At start point · 1 of ${n}`, startedAt: 'Trip started', startAt: 'Start at', tStart: 'Trip started',
     navFirst: 'Navigate to first point', navNext: 'Navigate to next point', reached: 'Reached location', otherMaps: 'Other maps app',
     routeDone: (d, n) => `Route · ${d} of ${n} done`, kmPrev: k => `${k} km from previous`, actual: 'actual', planned: 'planned', locSaved: 'location saved',
     openRest: n => `Open the remaining ${n > 1 ? `${n} stops` : 'stop'} in Google Maps`, next10: ' (next 10)',
@@ -125,7 +125,7 @@ const TX = {
     al20: (s, t) => `20 minutes to departure from ${s} (${t})`, al10: (s, t) => `10 minutes to departure from ${s} (${t})`,
     al0: (s, t) => `Time to depart from ${s} now (${t})`, alPast: (s, t) => `Planned departure from ${s} was ${t}: depart now`,
     alOk: 'OK', alTitle: 'Ambulance departure', nextAlarm: (w, t) => `Next alarm: ${w} at ${t}`, w20: '20 min warning', w10: '10 min warning', w0: 'depart now',
-    noAwake: 'Could not keep the screen on.', locTip: 'Allow location when the phone asks: it saves where you were when you tap Reached and Depart.', langBtn: 'हिंदी'
+    noAwake: 'Could not keep the screen on.', locTip: 'Allow location when the phone asks: it saves where you were when you tap Start trip, Reached location and Departure.', langBtn: 'हिंदी'
   },
   hi: {
     org: 'एम्बुलेंस ड्यूटी', loading: 'लोड हो रहा है…', loadingRoute: 'आपका रूट लोड हो रहा है…', notAvail: 'रूट उपलब्ध नहीं',
@@ -139,10 +139,10 @@ const TX = {
     deployment: 'ड्यूटी', completed: 'पूरा ✓', finished: t => `${t} पर पूरा हुआ। धन्यवाद।`, undoMistake: 'वापस लें (गलती से टैप हुआ)',
     allDone: n => `सभी ${n} स्टॉप पूरे`, finish: 'ड्यूटी पूरी करें', complete: 'ड्यूटी पूरी करें', undoLast: 'पिछला टैप वापस लें',
     atStop: (i, n) => `स्टॉप ${i} / ${n} पर`, firstStop: n => `पहला स्टॉप · 1 / ${n}`, nextStop: (i, n) => `अगला स्टॉप · ${i} / ${n}`,
-    haltUntil: t => `${t} तक`, haltOn: t => `हॉल्ट ${t} से चल रहा है (पहुँचे टैप करते ही शुरू)।`,
+    haltUntil: t => `${t} तक`, haltOn: t => `हॉल्ट ${t} से चल रहा है।`,
     reachedAt: 'पहुँचे', reachBy: 'पहुँचना है', expected: t => `अनुमानित ${t}`, leaveAt: 'निकलना है', halt: m => `हॉल्ट ${m} मिनट`, haltStarted: t => `हॉल्ट शुरू ${t}`,
     running: x => `स्थिति: ${x}`, onTime: 'समय पर', late: m => `${m} मिनट देर`, early: m => `${m} मिनट जल्दी`,
-    startHalt: 'हॉल्ट शुरू करें', departNav: n => `निकलें और नेविगेट करें → ${n}`, departLast: 'निकलें (आखिरी स्टॉप)',
+    startHalt: 'हॉल्ट शुरू करें', departNav: n => `अगले स्टॉप के लिए निकलें → ${n}`, departLast: 'निकलें (आखिरी स्टॉप)', startTrip: 'यात्रा शुरू करें', startPoint: n => `शुरुआती पॉइंट · 1 / ${n}`, atStart: n => `शुरुआती पॉइंट पर · 1 / ${n}`, startedAt: 'यात्रा शुरू', startAt: 'शुरू करना है', tStart: 'यात्रा शुरू हुई',
     navFirst: 'पहले पॉइंट पर नेविगेट करें', navNext: 'अगले पॉइंट पर नेविगेट करें', reached: 'लोकेशन पर पहुँच गए', otherMaps: 'दूसरा मैप ऐप',
     routeDone: (d, n) => `रूट · ${n} में से ${d} पूरे`, kmPrev: k => `पिछले से ${k} किमी`, actual: 'असल', planned: 'योजना', locSaved: 'लोकेशन सेव',
     openRest: n => `बाकी ${n} स्टॉप Google Maps में खोलें`, next10: ' (अगले 10)',
@@ -159,7 +159,7 @@ const TX = {
     al20: (s, t) => `${s} से निकलने में 20 मिनट बाकी (${t})`, al10: (s, t) => `${s} से निकलने में 10 मिनट बाकी (${t})`,
     al0: (s, t) => `अब ${s} से निकलने का समय है (${t})`, alPast: (s, t) => `${s} से निकलने का योजना समय ${t} था: अभी निकलें`,
     alOk: 'ठीक है', alTitle: 'एम्बुलेंस निकलने का समय', nextAlarm: (w, t) => `अगला अलार्म: ${t} पर ${w}`, w20: '20 मिनट की चेतावनी', w10: '10 मिनट की चेतावनी', w0: 'अभी निकलें',
-    noAwake: 'स्क्रीन चालू नहीं रखी जा सकी।', locTip: 'फ़ोन पूछे तो लोकेशन की अनुमति दें: पहुँचे और निकलें टैप करते समय आप कहाँ थे, यह सेव होता है।', langBtn: 'English'
+    noAwake: 'स्क्रीन चालू नहीं रखी जा सकी।', locTip: 'फ़ोन पूछे तो लोकेशन की अनुमति दें: यात्रा शुरू, पहुँचे और निकलें टैप करते समय आप कहाँ थे, यह सेव होता है।', langBtn: 'English'
   }
 };
 let LANG = 'en';
@@ -224,20 +224,20 @@ function render() {
     const r = pi.rows[pi.cur], s = r.stop, at = r.st === 'at', next = stops[pi.cur + 1];
     if (at) warmPos();
     cur = `<div class="card">
-      <div class="lbl">${esc(at ? T('atStop', pi.cur + 1, stops.length) : pi.cur === 0 && !pi.started ? T('firstStop', stops.length) : T('nextStop', pi.cur + 1, stops.length))}</div>
+      <div class="lbl">${esc(at ? (pi.cur === 0 ? T('atStart', stops.length) : T('atStop', pi.cur + 1, stops.length)) : pi.cur === 0 ? T('startPoint', stops.length) : T('nextStop', pi.cur + 1, stops.length))}</div>
       <div class="big">${esc(s.name)}</div>
       ${s.remarks ? `<div class="rem">${esc(s.remarks)}</div>` : ''}
       <div class="times">
-        <div><small>${esc(at ? T('reachedAt') : T('reachBy'))}</small><b>${at ? istHM(r.actArr) : istHM(s.arr)}</b><small>${at ? dl(r.arrDelay) : pi.started && Math.abs(pi.delay) >= 3 ? esc(T('expected', istHM(r.etaArr))) : ''}</small></div>
-        <div><small>${esc(T('leaveAt'))}</small><b>${istHM(s.dep)}</b><small>${s.halt ? esc(T('halt', s.halt)) : ''}${at && s.halt ? ' · ' + esc(T('haltUntil', istHM(new Date(new Date(r.actHalt || r.actArr).getTime() + s.halt * 60000).toISOString()))) : ''}</small></div>
+        <div><small>${esc(at ? (pi.cur === 0 ? T('startedAt') : T('reachedAt')) : pi.cur === 0 ? T('startAt') : T('reachBy'))}</small><b>${at ? istHM(r.actArr) : istHM(s.arr)}</b><small>${at ? dl(r.arrDelay) : pi.started && Math.abs(pi.delay) >= 3 ? esc(T('expected', istHM(r.etaArr))) : ''}</small></div>
+        <div><small>${esc(T('leaveAt'))}</small><b>${istHM(s.dep)}</b><small>${s.halt ? esc(T('halt', s.halt)) : ''}</small></div>
       </div>
       ${pi.started && !at ? `<div class="note">${T('running', dl(pi.delay) || esc(T('onTime')))}</div>` : ''}
       ${at ? `<div class="note" style="margin-top:6px">${esc(T('haltOn', istHM(r.actHalt || r.actArr)))}</div>
               <button class="btn go" data-a="dep">${next ? esc(T('departNav', next.name)) : esc(T('departLast'))}</button>`
-            : `<a class="btn nav" href="${navUrl(s.lat, s.lng)}" target="_blank" rel="noopener">${esc(pi.cur === 0 && !pi.started ? T('navFirst') : T('navNext'))}</a>
-              <button class="btn main" data-a="arr">${esc(T('reached'))}</button>
+            : `<button class="btn main" data-a="arr">${esc(pi.cur === 0 ? T('startTrip') : T('reached'))}</button>
+              ${pi.cur === 0 && !pi.started ? '' : `<a class="btn nav" href="${navUrl(s.lat, s.lng)}" target="_blank" rel="noopener">${esc(T('navNext'))}</a>`}
               ${!pi.started ? `<div class="note" style="margin-top:8px">${esc(T('locTip'))}</div>` : ''}`}
-      <div class="row2"><a class="link" href="geo:${s.lat},${s.lng}?q=${s.lat},${s.lng}(${encodeURIComponent(s.name)})">${esc(T('otherMaps'))}</a>${pi.started ? `<button class="link" style="text-align:right" data-a="undo">${esc(T('undoLast'))}</button>` : ''}</div>
+      <div class="row2">${pi.cur === 0 && !pi.started ? '<span></span>' : `<a class="link" href="geo:${s.lat},${s.lng}?q=${s.lat},${s.lng}(${encodeURIComponent(s.name)})">${esc(T('otherMaps'))}</a>`}${pi.started ? `<button class="link" style="text-align:right" data-a="undo">${esc(T('undoLast'))}</button>` : ''}</div>
     </div>`;
   }
   const items = pi.rows.map(r => `<li class="${r.st === 'done' ? 'done' : r.i === pi.cur ? 'cur' : ''}"><span class="n">${r.st === 'done' ? '✓' : r.i + 1}</span><span>${esc(r.stop.name)}${r.stop.remarks ? `<small>${esc(r.stop.remarks)}</small>` : ''}${r.stop.km != null ? `<small>${esc(T('kmPrev', fmt(r.stop.km)))}</small>` : ''}</span><span class="t">${r.actArr ? `${istHM(r.actArr)}${r.actDep ? '–' + istHM(r.actDep) : ''}<small>${esc(T('actual'))}${r.llArr ? ' · 📍' : ''}</small>` : `${istHM(r.stop.arr)}–${istHM(r.stop.dep)}<small>${esc(T('planned'))}</small>`}</span></li>`).join('');
@@ -306,7 +306,7 @@ async function act(kind, nav) {
   const q = queue(); q.push(item); setQueue(q);
   render();
   if (navigator.vibrate) navigator.vibrate(30);
-  toast(kind === 'arr' ? T('tArr') : kind === 'dep' ? (nav ? T('tDepNav') : T('tDep')) : kind === 'halt' ? T('tHalt') : kind === 'complete' ? T('tDone') : T('tUndo'));
+  toast(kind === 'arr' ? (item.stop === 0 ? T('tStart') : T('tArr')) : kind === 'dep' ? (nav ? T('tDepNav') : T('tDep')) : kind === 'halt' ? T('tHalt') : kind === 'complete' ? T('tDone') : T('tUndo'));
   busyAct = false;
   if (tap) {
     const p = await tapPos(kind), q2 = queue(), it = q2.find(x => x.at === item.at && x.kind === kind);
@@ -372,7 +372,7 @@ document.addEventListener('pointerdown', () => { if (ALARMS) unlockAudio(); }, {
 /* phones allow sound and notifications only after the first tap on the page */
 document.addEventListener('click', () => {
   if (!ALARMS) return; unlockAudio();
-  if (!firstTap) { firstTap = true; if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {}); if ('wakeLock' in navigator && !wake) keepAwake(true); if (V) render(); }
+  if (!firstTap) { firstTap = true; if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {}); if ('wakeLock' in navigator && !wake) keepAwake(true, true); if (V) render(); }
 }, true);
 function beep(times, urgent) {
   if (!actx) return; const t0 = actx.currentTime;
@@ -420,7 +420,7 @@ function checkAlarms() {
 function alarmCard(pi, stops) {
   const n = nextAlarm(), notifBlocked = 'Notification' in window && Notification.permission === 'denied';
   return `<div class="card"><div class="lbl">⏰ ${esc(T('alarmsTitle'))}</div>${ALARMS
-    ? `<div class="note" style="margin:6px 0">${esc(T('alarmsOn'))}${n ? `<br><b>${esc(T('nextAlarm', T(n.k), istHM(new Date(n.t).toISOString())))}</b>` : ''}</div><div class="note">${esc(T('alarmsKeep'))}${notifBlocked ? ' ' + esc(T('alarmsNoNotif')) : ''}</div><button class="link" id="alOff">${esc(T('alarmsStop'))}</button>`
+    ? `${n ? `<div class="note" style="margin:6px 0"><b>${esc(T('nextAlarm', T(n.k), istHM(new Date(n.t).toISOString())))}</b></div>` : ''}${notifBlocked ? `<div class="note">${esc(T('alarmsNoNotif'))}</div>` : ''}<button class="link" id="alOff">${esc(T('alarmsStop'))}</button>`
     : `<button class="btn sec" id="alOn">🔔 ${esc(T('alarmsBtn'))}</button>`}${ALARMS && !(actx && actx.state === 'running') ? `<button class="btn sec" id="alOn">🔔 ${esc(T('alarmsSound'))}</button>` : ''}</div>`;
 }
 async function alarmsOn() {
